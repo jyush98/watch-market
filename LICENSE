@@ -19,3 +19,50 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+### Branch Strategy
+
+Set up these branches:
+- `main` - Production-ready code only
+- `develop` - Integration branch
+- `feature/pricing-engine` - Your first feature branch
+
+### Initial Commit Message Convention
+
+Use conventional commits for clarity:
+- `feat: Add Chrono24 scraper`
+- `fix: Handle rate limiting in scraper`
+- `docs: Update API documentation`
+- `refactor: Optimize database queries`
+- `test: Add pricing algorithm tests`
+
+### GitHub Actions (create `.github/workflows/ci.yml`)
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.9'
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+    - name: Run tests
+      run: |
+        python -m pytest
+    - name: Run linter
+      run: |
+        flake8 src/
