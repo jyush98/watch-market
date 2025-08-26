@@ -1,0 +1,72 @@
+[
+  {
+    "source": "bobs_watches",
+    "brand": "Rolex",
+    "scraped_at": "2025-08-26T15:45:23.383541",
+    "title": "Preowned Rolex Submariner 116618 Blue Dial",
+    "model": "Submariner",
+    "reference_number": "116618",
+    "url": "https://www.bobswatches.com/preowned-rolex-submariner-116618-blue-dial.html",
+    "source_id": "d5a06aff426d61ba",
+    "price_usd": 34995.0,
+    "sku": "180636",
+    "condition": "pre-owned",
+    "material": "Yellow Gold"
+  },
+  {
+    "source": "bobs_watches",
+    "brand": "Rolex",
+    "scraped_at": "2025-08-26T15:45:23.383660",
+    "title": "Mens Rolex Submariner 126610 Black Dial",
+    "model": "Submariner",
+    "reference_number": "126610",
+    "url": "https://www.bobswatches.com/mens-rolex-submariner-126610-black-dial.html",
+    "source_id": "01be442cb6d66c4e",
+    "price_usd": 14995.0,
+    "sku": "175167",
+    "condition": "pre-owned",
+    "material": "Stainless Steel"
+  },
+  {
+    "source": "bobs_watches",
+    "brand": "Rolex",
+    "scraped_at": "2025-08-26T15:45:23.383683",
+    "title": "Vintage Rolex Submariner Ref 16800 Stainless Steel Black Dial",
+    "model": "Submariner",
+    "reference_number": "16800",
+    "url": "https://www.bobswatches.com/vintage-rolex-submariner-ref-16800-stainless-steel-black-dial.html",
+    "source_id": "6dc9b688acdd7897",
+    "price_usd": 9995.0,
+    "sku": "180931",
+    "condition": "pre-owned",
+    "material": "Stainless Steel"
+  },
+  {
+    "source": "bobs_watches",
+    "brand": "Rolex",
+    "scraped_at": "2025-08-26T15:45:23.383702",
+    "title": "Used Rolex Submariner 16800 Stainless Steel Oyster",
+    "model": "Submariner",
+    "reference_number": "16800",
+    "url": "https://www.bobswatches.com/used-rolex-submariner-16800-stainless-steel-oyster.html",
+    "source_id": "abd15147f23abb48",
+    "price_usd": 10595.0,
+    "sku": "180781",
+    "condition": "pre-owned",
+    "material": "Stainless Steel"
+  },
+  {
+    "source": "bobs_watches",
+    "brand": "Rolex",
+    "scraped_at": "2025-08-26T15:45:23.383721",
+    "title": "Vintage Rolex Submariner 168000 Stainless Steel",
+    "model": "Submariner",
+    "reference_number": "168000",
+    "url": "https://www.bobswatches.com/vintage-rolex-submariner-168000-stainless-steel.html",
+    "source_id": "e7f4b697475d11d9",
+    "price_usd": 9695.0,
+    "sku": "138781",
+    "condition": "pre-owned",
+    "material": "Stainless Steel"
+  }
+]
