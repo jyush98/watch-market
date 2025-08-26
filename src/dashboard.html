@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Watch Market Intelligence Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold mb-8">Watch Market Intelligence</h1>
+
+        <!-- Navigation Tabs -->
+        <div class="flex space-x-1 mb-8">
+            <button id="overviewTab" class="px-4 py-2 bg-blue-600 text-white rounded-t-lg font-medium" onclick="showTab('overview')">Overview</button>
+            <button id="priceHistoryTab" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-t-lg font-medium hover:bg-gray-300" onclick="showTab('priceHistory')">Price History</button>
+        </div>
+
+        <!-- Overview Tab Content -->
+        <div id="overviewContent">
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h3 class="text-gray-500 text-sm">Total Watches</h3>
+                    <p class="text-2xl font-bold" id="totalWatches">-</p>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h3 class="text-gray-500 text-sm">Average Price</h3>
+                    <p class="text-2xl font-bold" id="avgPrice">-</p>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h3 class="text-gray-500 text-sm">Min Price</h3>
+                    <p class="text-2xl font-bold" id="minPrice">-</p>
+                </div>
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h3 class="text-gray-500 text-sm">Max Price</h3>
+                    <p class="text-2xl font-bold" id="maxPrice">-</p>
+                </div>
+            </div>
+
+            <!-- Arbitrage Opportunities -->
+            <div class="bg-white rounded-lg shadow p-6 mb-8">
+                <h2 class="text-xl font-bold mb-4">💰 Arbitrage Opportunities</h2>
+                <p class="text-sm text-gray-600 mb-4">Same reference number, different prices - buy low, sell high</p>
+                <div id="arbitrage" class="space-y-2"></div>
+            </div>
+
+            <!-- Best Deals -->
+            <div class="bg-white rounded-lg shadow p-6 mb-8">
+                <h2 class="text-xl font-bold mb-4">🎯 Best Deals by Reference</h2>
+                <p class="text-sm text-gray-600 mb-4">Watches priced below average for their exact reference (min 3
+                    comparables)</p>
+                <div id="bestDeals" class="space-y-2"></div>
+            </div>
+
+            <!-- Reference Analysis -->
+            <div class="bg-white rounded-lg shadow p-6 mb-8">
+                <h2 class="text-xl font-bold mb-4">📊 Reference Price Analysis</h2>
+                <p class="text-sm text-gray-600 mb-4">Price variations within the same reference number</p>
+                <div id="referenceAnalysis" class="overflow-x-auto"></div>
+            </div>
+        </div>
+
+        <!-- Price History Tab Content -->
+        <div id="priceHistoryContent" class="hidden">
+            <!-- Price History Summary -->
+            <div class="bg-white rounded-lg shadow p-6 mb-8">
+                <h2 class="text-xl font-bold mb-4">📈 Price History Summary</h2>
+                <p class="text-sm text-gray-600 mb-4">References with price tracking data</p>
+                <div id="priceHistoryList" class="space-y-2"></div>
+            </div>
+
+            <!-- Selected Reference Price History -->
+            <div id="selectedReferenceHistory" class="bg-white rounded-lg shadow p-6 mb-8 hidden">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold" id="selectedReferenceTitle">Price History</h2>
+                    <div class="space-x-2">
+                        <button onclick="loadPriceHistoryDetail(currentSelectedKey, 7)" class="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm">7 days</button>
+                        <button onclick="loadPriceHistoryDetail(currentSelectedKey, 30)" class="px-3 py-1 bg-blue-600 text-white rounded text-sm">30 days</button>
+                        <button onclick="loadPriceHistoryDetail(currentSelectedKey, 90)" class="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm">90 days</button>
+                    </div>
+                </div>
+                <div id="priceHistoryDetail" class="overflow-x-auto"></div>
+                <div id="priceHistoryTrends" class="mt-6"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000';
+        let currentSelectedKey = null;
+
+        // Tab Management
+        function showTab(tabName) {
+            // Hide all content
+            document.getElementById('overviewContent').classList.add('hidden');
+            document.getElementById('priceHistoryContent').classList.add('hidden');
+            
+            // Reset tab styles
+            document.getElementById('overviewTab').className = 'px-4 py-2 bg-gray-200 text-gray-700 rounded-t-lg font-medium hover:bg-gray-300';
+            document.getElementById('priceHistoryTab').className = 'px-4 py-2 bg-gray-200 text-gray-700 rounded-t-lg font-medium hover:bg-gray-300';
+            
+            // Show selected content and update tab style
+            if (tabName === 'overview') {
+                document.getElementById('overviewContent').classList.remove('hidden');
+                document.getElementById('overviewTab').className = 'px-4 py-2 bg-blue-600 text-white rounded-t-lg font-medium';
+            } else if (tabName === 'priceHistory') {
+                document.getElementById('priceHistoryContent').classList.remove('hidden');
+                document.getElementById('priceHistoryTab').className = 'px-4 py-2 bg-blue-600 text-white rounded-t-lg font-medium';
+                loadPriceHistoryList();
+            }
+        }
+
+        // Price History Functions
+        async function loadPriceHistoryList() {
+            try {
+                const response = await fetch(`${API_URL}/api/price-trends`);
+                const trends = await response.json();
+
+                if (trends.length === 0) {
+                    document.getElementById('priceHistoryList').innerHTML = '<p class="text-gray-500">No price history data available yet</p>';
+                    return;
+                }
+
+                const html = trends.map(item => `
+                    <div class="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer" onclick="selectPriceHistory('${item.comparison_key}')">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <span class="font-semibold">${item.brand} ${item.model}</span>
+                                <span class="text-sm font-mono bg-gray-200 px-2 py-1 rounded ml-2">${item.reference_number}</span>
+                                ${item.comparison_key !== item.reference_number ? '<span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded ml-1">variant</span>' : ''}
+                            </div>
+                            <div class="text-right">
+                                <div class="text-lg font-bold">$${item.avg_price.toLocaleString()}</div>
+                                <div class="text-sm text-gray-500">${item.data_points} data points</div>
+                                <div class="text-xs text-gray-400">Range: $${item.min_price.toLocaleString()} - $${item.max_price.toLocaleString()}</div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+
+                document.getElementById('priceHistoryList').innerHTML = html;
+            } catch (error) {
+                console.error('Error loading price history list:', error);
+                document.getElementById('priceHistoryList').innerHTML = '<p class="text-red-500">Error loading price history data</p>';
+            }
+        }
+
+        async function selectPriceHistory(comparisonKey) {
+            currentSelectedKey = comparisonKey;
+            document.getElementById('selectedReferenceHistory').classList.remove('hidden');
+            await loadPriceHistoryDetail(comparisonKey, 30);
+        }
+
+        async function loadPriceHistoryDetail(comparisonKey, days = 30) {
+            try {
+                const response = await fetch(`${API_URL}/api/price-history/${encodeURIComponent(comparisonKey)}?days=${days}`);
+                const data = await response.json();
+
+                document.getElementById('selectedReferenceTitle').textContent = `Price History - ${comparisonKey}`;
+
+                // Update button styles
+                document.querySelectorAll('#selectedReferenceHistory button').forEach(btn => {
+                    btn.className = 'px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm';
+                });
+                event.target.className = 'px-3 py-1 bg-blue-600 text-white rounded text-sm';
+
+                if (!data.history || data.history.length === 0) {
+                    document.getElementById('priceHistoryDetail').innerHTML = '<p class="text-gray-500">No price history data for this period</p>';
+                    document.getElementById('priceHistoryTrends').innerHTML = '';
+                    return;
+                }
+
+                // Price History Table
+                const historyHtml = `
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead>
+                            <tr>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Change</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Link</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            ${data.history.map(record => {
+                                const date = new Date(record.timestamp).toLocaleDateString();
+                                const changeText = record.price_change 
+                                    ? `${record.price_change > 0 ? '+' : ''}$${record.price_change.toLocaleString()} (${record.price_change_percent > 0 ? '+' : ''}${record.price_change_percent?.toFixed(1)}%)`
+                                    : 'Initial';
+                                const changeClass = record.price_change > 0 ? 'text-green-600' : record.price_change < 0 ? 'text-red-600' : 'text-gray-500';
+                                
+                                return `
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="px-4 py-2 text-sm">${date}</td>
+                                        <td class="px-4 py-2 text-sm font-semibold">$${record.price_usd.toLocaleString()}</td>
+                                        <td class="px-4 py-2 text-sm ${changeClass}">${changeText}</td>
+                                        <td class="px-4 py-2 text-sm">${record.source}</td>
+                                        <td class="px-4 py-2 text-sm">
+                                            <a href="${record.url}" target="_blank" class="text-blue-500 hover:underline">View →</a>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                `;
+
+                document.getElementById('priceHistoryDetail').innerHTML = historyHtml;
+
+                // Trends Summary
+                if (data.trends) {
+                    const trends = data.trends;
+                    const trendClass = trends.trend_direction === 'up' ? 'text-green-600' : trends.trend_direction === 'down' ? 'text-red-600' : 'text-gray-600';
+                    const trendIcon = trends.trend_direction === 'up' ? '↗' : trends.trend_direction === 'down' ? '↘' : '→';
+                    
+                    const trendsHtml = `
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <h3 class="font-semibold mb-2">Trend Analysis (${days} days)</h3>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div>
+                                    <div class="text-xs text-gray-500">Current Avg</div>
+                                    <div class="font-bold">$${trends.current_avg_price.toLocaleString()}</div>
+                                </div>
+                                <div>
+                                    <div class="text-xs text-gray-500">Price Range</div>
+                                    <div class="font-bold">$${trends.min_price.toLocaleString()} - $${trends.max_price.toLocaleString()}</div>
+                                </div>
+                                <div>
+                                    <div class="text-xs text-gray-500">Trend</div>
+                                    <div class="font-bold ${trendClass}">${trendIcon} ${trends.trend_percent}%</div>
+                                </div>
+                                <div>
+                                    <div class="text-xs text-gray-500">Data Points</div>
+                                    <div class="font-bold">${trends.data_points}</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    
+                    document.getElementById('priceHistoryTrends').innerHTML = trendsHtml;
+                } else {
+                    document.getElementById('priceHistoryTrends').innerHTML = '';
+                }
+
+            } catch (error) {
+                console.error('Error loading price history detail:', error);
+                document.getElementById('priceHistoryDetail').innerHTML = '<p class="text-red-500">Error loading price history detail</p>';
+                document.getElementById('priceHistoryTrends').innerHTML = '';
+            }
+        }
+
+        async function loadStats() {
+            const response = await fetch(`${API_URL}/api/stats`);
+            const stats = await response.json();
+
+            document.getElementById('totalWatches').textContent = stats.total_watches;
+            document.getElementById('avgPrice').textContent = `$${stats.avg_price.toLocaleString()}`;
+            document.getElementById('minPrice').textContent = `$${stats.min_price.toLocaleString()}`;
+            document.getElementById('maxPrice').textContent = `$${stats.max_price.toLocaleString()}`;
+        }
+
+        async function loadArbitrage() {
+            const response = await fetch(`${API_URL}/api/arbitrage-opportunities`);
+            const opportunities = await response.json();
+
+            if (opportunities.length === 0) {
+                document.getElementById('arbitrage').innerHTML = '<p class="text-gray-500">No significant arbitrage opportunities found</p>';
+                return;
+            }
+
+            const html = opportunities.slice(0, 5).map(opp => `
+                <div class="border-l-4 border-green-500 pl-4 py-2">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <span class="font-bold text-lg">${opp.model} Ref. ${opp.reference}</span>
+                            <div class="text-sm text-gray-600 mt-1">
+                                Buy at: <span class="text-green-600 font-bold">$${opp.buy_price.toLocaleString()}</span> | 
+                                Sell comp: <span class="text-blue-600 font-bold">$${opp.sell_price.toLocaleString()}</span>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-green-600 font-bold text-lg">+$${opp.profit_potential.toLocaleString()}</div>
+                            <div class="text-sm text-gray-500">${opp.profit_percentage}% profit</div>
+                            <div class="text-xs text-gray-400">${opp.listings_count} listings</div>
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        <a href="${opp.buy_url}" target="_blank" class="text-blue-500 text-sm mr-4">View Buy →</a>
+                        <a href="${opp.sell_comp_url}" target="_blank" class="text-gray-500 text-sm">View Comp →</a>
+                    </div>
+                </div>
+            `).join('');
+
+            document.getElementById('arbitrage').innerHTML = html;
+        }
+
+        async function loadBestDeals() {
+            const response = await fetch(`${API_URL}/api/best-deals`);
+            const deals = await response.json();
+
+            if (deals.length === 0) {
+                document.getElementById('bestDeals').innerHTML = '<p class="text-gray-500">No deals found (need 3+ listings per reference)</p>';
+                return;
+            }
+
+            const dealsHtml = deals.slice(0, 10).map(deal => `
+                <div class="flex justify-between items-center p-3 bg-green-50 rounded border border-green-200">
+                    <div>
+                        <span class="font-semibold">${deal.model}</span>
+                        <span class="text-sm font-mono bg-gray-200 px-1 rounded">${deal.reference}</span>
+                        <div class="text-xs text-gray-600 mt-1">
+                            vs ${deal.comparable_count} others | Range: $${deal.min_price.toLocaleString()}-$${deal.max_price.toLocaleString()}
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div>
+                            <span class="font-bold text-green-600">$${deal.price.toLocaleString()}</span>
+                            <span class="text-sm text-gray-500 ml-2 line-through">$${deal.avg_price.toLocaleString()}</span>
+                        </div>
+                        <div class="text-sm">
+                            <span class="text-green-600 font-bold">-${deal.discount_percentage}%</span>
+                            <span class="text-gray-500 ml-1">($${deal.discount_dollars.toLocaleString()} off)</span>
+                        </div>
+                        <a href="${deal.url}" target="_blank" class="text-blue-500 text-sm">View →</a>
+                    </div>
+                </div>
+            `).join('');
+
+            document.getElementById('bestDeals').innerHTML = dealsHtml;
+        }
+
+        async function loadReferenceAnalysis() {
+            const response = await fetch(`${API_URL}/api/reference-analysis`);
+            const refs = await response.json();
+
+            if (refs.length === 0) {
+                document.getElementById('referenceAnalysis').innerHTML = '<p class="text-gray-500">Not enough data for reference analysis</p>';
+                return;
+            }
+
+            const html = `
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead>
+                        <tr>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Reference</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Count</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Min</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Avg</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Max</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Spread</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+                        ${refs.slice(0, 10).map(ref => `
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-4 py-2 font-mono text-sm">${ref.reference}</td>
+                                <td class="px-4 py-2 text-sm">${ref.model}</td>
+                                <td class="px-4 py-2 text-sm">${ref.count}</td>
+                                <td class="px-4 py-2 text-sm">$${ref.min_price.toLocaleString()}</td>
+                                <td class="px-4 py-2 text-sm font-semibold">$${ref.avg_price.toLocaleString()}</td>
+                                <td class="px-4 py-2 text-sm">$${ref.max_price.toLocaleString()}</td>
+                                <td class="px-4 py-2 text-sm ${ref.price_spread > 20 ? 'text-red-600 font-bold' : ''}">
+                                    ${ref.price_spread}%
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            document.getElementById('referenceAnalysis').innerHTML = html;
+        }
+
+        // Load all data
+        loadStats();
+        loadArbitrage();
+        loadBestDeals();
+        loadReferenceAnalysis();
+
+        // Refresh every 30 seconds
+        setInterval(() => {
+            loadStats();
+            loadArbitrage();
+            loadBestDeals();
+            loadReferenceAnalysis();
+        }, 30000);
+    </script>
+</body>
+
+</html>
