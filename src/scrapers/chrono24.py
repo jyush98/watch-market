@@ -11,16 +11,42 @@ class Chrono24Scraper(BaseScraper):
    BASE_URL = "https://www.chrono24.com"
    
    def __init__(self):
-       super().__init__(delay_range=(2, 4))  # Be respectful with delays
+       super().__init__(delay_range=(3, 6))  # Longer delays for Chrono24
        self.source_name = "chrono24"
+       self.setup_chrono24_session()
+   
+   def setup_chrono24_session(self):
+       """Configure session specifically for Chrono24"""
+       # More realistic browser headers
+       self.session.headers.update({
+           'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+           'Accept-Language': 'en-US,en;q=0.9',
+           'Accept-Encoding': 'gzip, deflate, br',
+           'Referer': 'https://www.chrono24.com/',
+           'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+           'Sec-Ch-Ua-Mobile': '?0',
+           'Sec-Ch-Ua-Platform': '"macOS"',
+           'Sec-Fetch-Dest': 'document',
+           'Sec-Fetch-Mode': 'navigate',
+           'Sec-Fetch-Site': 'same-origin',
+           'Cache-Control': 'max-age=0'
+       })
    
    def scrape_search_results(self, search_url: str = None, max_pages: int = 1) -> List[Dict]:
        """Scrape Rolex listings from search results"""
        listings = []
        
-       # Use the working search URL format - searching for new Rolex watches in USD
+       # Use a simpler search URL format - searching for Rolex watches
        if not search_url:
-           search_url = "https://www.chrono24.com/search/index.htm?currencyId=USD&dosearch=true&manufacturerIds=221&maxAgeInDays=0&pageSize=60&redirectToSearchIndex=true&sortorder=0"
+           search_url = "https://www.chrono24.com/rolex/index.htm"
+       
+       # First, visit homepage to establish session/cookies
+       logger.info("Establishing session with Chrono24...")
+       homepage = self.get_page("https://www.chrono24.com")
+       if not homepage:
+           logger.error("Failed to establish session with Chrono24")
+           return listings
        
        logger.info(f"Scraping Chrono24 search: {search_url}")
        
