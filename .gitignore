@@ -25,3 +25,6 @@ secrets/
 .idea/
 *.swp
 *.swo
+
+# Virtual Environment
+venv/
