@@ -76,13 +76,20 @@ class PricingEngineUpdater:
         """Scrape multiple watch categories from Bob's Watches"""
         all_listings = []
         
-        # Different Rolex model pages to scrape for comprehensive data
+        # Comprehensive Rolex model pages for complete market coverage
         urls_to_scrape = [
             "https://www.bobswatches.com/rolex-submariner-1.html",
             "https://www.bobswatches.com/rolex-gmt-master-1.html", 
             "https://www.bobswatches.com/rolex-daytona-1.html",
             "https://www.bobswatches.com/rolex-datejust-1.html",
-            "https://www.bobswatches.com/rolex-explorer-1.html"
+            "https://www.bobswatches.com/rolex-explorer-1.html",
+            "https://www.bobswatches.com/rolex-sea-dweller-1.html",
+            "https://www.bobswatches.com/rolex-yacht-master-1.html",
+            "https://www.bobswatches.com/rolex-day-date-1.html",
+            "https://www.bobswatches.com/rolex-milgauss-1.html",
+            "https://www.bobswatches.com/rolex-air-king-1.html",
+            "https://www.bobswatches.com/rolex-oyster-perpetual-1.html",
+            "https://www.bobswatches.com/rolex-sky-dweller-1.html"
         ]
         
         for i, url in enumerate(urls_to_scrape[:max_pages]):
