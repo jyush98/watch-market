@@ -38,6 +38,11 @@ class WatchListing(Base):
     material = Column(String(100))  # 'steel', 'gold', 'two-tone'
     movement = Column(String(100))  # 'automatic', 'manual', 'quartz'
     
+    # Variation Tracking for Accurate Price Comparisons
+    dial_type = Column(String(100))  # 'Tiffany', 'Tropical', 'Spider', etc.
+    special_edition = Column(String(200))  # 'Tiffany & Co', 'COMEX', 'Domino\'s', etc.
+    comparison_key = Column(String(200), index=True)  # reference_number + variations for grouping
+    
     # Seller Information
     seller_name = Column(String(200))
     seller_location = Column(String(200))
@@ -54,6 +59,7 @@ class WatchListing(Base):
         Index('idx_brand_model', 'brand', 'model'),
         Index('idx_reference_price', 'reference_number', 'price_usd'),
         Index('idx_active_updated', 'is_active', 'last_updated'),
+        Index('idx_comparison_key_price', 'comparison_key', 'price_usd'),
     )
     
     def __repr__(self):
@@ -67,12 +73,29 @@ class PriceHistory(Base):
     listing_id = Column(Integer, index=True)
     source_id = Column(String(100), index=True)
     
-    price_usd = Column(Float, nullable=False)
+    # Watch identification for aggregation
+    comparison_key = Column(String(200), index=True)
+    brand = Column(String(100), index=True)
+    model = Column(String(200))
+    reference_number = Column(String(100))
+    
+    # Price tracking
+    price_usd = Column(Float, nullable=False, index=True)
+    previous_price = Column(Float)
     timestamp = Column(DateTime, server_default=func.now(), index=True)
     
     # Track what changed
     price_change = Column(Float)  # Dollar amount change
     price_change_percent = Column(Float)  # Percentage change
+    
+    # Additional context
+    source = Column(String(50))
+    url = Column(String(500))
+    
+    __table_args__ = (
+        Index('idx_comparison_key_timestamp', 'comparison_key', 'timestamp'),
+        Index('idx_brand_model_timestamp', 'brand', 'model', 'timestamp'),
+    )
     
 class MarketAnalytics(Base):
     """Store computed market analytics"""
