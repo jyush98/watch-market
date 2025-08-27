@@ -17,6 +17,11 @@ class WatchListing(Base):
     source_id = Column(String(100), unique=True, nullable=False)  # ID from source
     url = Column(String(500), nullable=False)
     
+    # Epic #008: Wholesale Market Integration
+    source_type = Column(String(20), nullable=False, default='retail', index=True)  # 'retail' or 'wholesale'
+    communication_type = Column(String(50))  # 'website', 'whatsapp_group', 'direct_message'
+    dealer_group = Column(String(100))  # WhatsApp group name for tracking
+    
     # Watch Information
     brand = Column(String(100), nullable=False, index=True)
     model = Column(String(200), nullable=False, index=True)
@@ -60,6 +65,8 @@ class WatchListing(Base):
         Index('idx_reference_price', 'reference_number', 'price_usd'),
         Index('idx_active_updated', 'is_active', 'last_updated'),
         Index('idx_comparison_key_price', 'comparison_key', 'price_usd'),
+        Index('idx_source_type_comparison_key', 'source_type', 'comparison_key'),
+        Index('idx_communication_type', 'communication_type'),
     )
     
     def __repr__(self):
@@ -92,6 +99,9 @@ class PriceHistory(Base):
     source = Column(String(50))
     url = Column(String(500))
     
+    # Epic #008: Source type for dual-market tracking
+    source_type = Column(String(20), index=True)  # 'retail' or 'wholesale'
+    
     __table_args__ = (
         Index('idx_comparison_key_timestamp', 'comparison_key', 'timestamp'),
         Index('idx_brand_model_timestamp', 'brand', 'model', 'timestamp'),
@@ -119,3 +129,25 @@ class MarketAnalytics(Base):
     price_trend_30d = Column(Float)
     
     computed_at = Column(DateTime, server_default=func.now())
+
+# Epic #008: Dual Market Pricing View
+# This would be implemented as a database view:
+# CREATE VIEW dual_market_pricing AS
+# SELECT 
+#     comparison_key,
+#     brand,
+#     model,
+#     reference_number,
+#     AVG(CASE WHEN source_type = 'retail' THEN price_usd END) as avg_retail_price,
+#     AVG(CASE WHEN source_type = 'wholesale' THEN price_usd END) as avg_wholesale_price,
+#     COUNT(CASE WHEN source_type = 'retail' THEN 1 END) as retail_listings_count,
+#     COUNT(CASE WHEN source_type = 'wholesale' THEN 1 END) as wholesale_listings_count,
+#     -- Calculate margin insights
+#     (AVG(CASE WHEN source_type = 'retail' THEN price_usd END) - 
+#      AVG(CASE WHEN source_type = 'wholesale' THEN price_usd END)) as avg_dealer_margin,
+#     ((AVG(CASE WHEN source_type = 'retail' THEN price_usd END) - 
+#       AVG(CASE WHEN source_type = 'wholesale' THEN price_usd END)) / 
+#       AVG(CASE WHEN source_type = 'wholesale' THEN price_usd END) * 100) as margin_percentage
+# FROM watch_listings 
+# WHERE comparison_key IS NOT NULL
+# GROUP BY comparison_key, brand, model, reference_number;

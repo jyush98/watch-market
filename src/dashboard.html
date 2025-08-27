@@ -17,6 +17,7 @@
             <button id="overviewTab" class="px-4 py-2 bg-blue-600 text-white rounded-t-lg font-medium" onclick="showTab('overview')">Overview</button>
             <button id="priceHistoryTab" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-t-lg font-medium hover:bg-gray-300" onclick="showTab('priceHistory')">Price History</button>
             <button id="priceSearchTab" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-t-lg font-medium hover:bg-gray-300" onclick="showTab('priceSearch')">🔍 Price Search</button>
+            <button id="dualMarketTab" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-t-lg font-medium hover:bg-gray-300" onclick="showTab('dualMarket')">🏪 Wholesale Market</button>
         </div>
 
         <!-- Overview Tab Content -->
@@ -154,6 +155,71 @@
         </div>
     </div>
 
+    <!-- Epic #008: Dual Market (Wholesale) Tab Content -->
+    <div id="dualMarketContent" class="hidden">
+        <!-- Margin Opportunities Overview -->
+        <div class="bg-white rounded-lg shadow p-6 mb-8">
+            <h2 class="text-xl font-bold mb-4">🏪 Wholesale Market Intelligence</h2>
+            <p class="text-sm text-gray-600 mb-6">Discover arbitrage opportunities between wholesale and retail markets. Compare dealer margins and identify profitable watches.</p>
+            <div id="marginOpportunities" class="space-y-4">
+                <!-- Margin opportunities will be loaded here -->
+            </div>
+        </div>
+
+        <!-- Dual Market Search Interface -->
+        <div class="bg-white rounded-lg shadow p-6 mb-8">
+            <h2 class="text-xl font-bold mb-4">🔍 Dual Market Price Search</h2>
+            <p class="text-sm text-gray-600 mb-6">Search watches showing both wholesale and retail pricing. Compare up to 5 watches with dual price lines.</p>
+            
+            <!-- Search Bar -->
+            <div class="relative mb-4">
+                <input 
+                    type="text" 
+                    id="dualMarketSearch" 
+                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg" 
+                    placeholder="Search by model, reference, or special edition..."
+                    oninput="debounce(() => dualMarketSearch(this.value), 300)()"
+                    onclick="this.select()"
+                    autocomplete="off"
+                />
+                
+                <!-- Search Results Dropdown -->
+                <div id="dualSearchDropdown" class="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-10 hidden max-h-96 overflow-y-auto">
+                    <!-- Search results will be populated here -->
+                </div>
+            </div>
+            
+            <!-- Selected Watches Pills -->
+            <div id="dualWatchPillsContainer" class="mb-6">
+                <!-- Selected watch pills will be populated here -->
+            </div>
+            
+            <!-- Time Range Selector -->
+            <div id="dualTimeRangeContainer" class="flex space-x-2 mb-6 hidden">
+                <button id="dualRange30d" onclick="updateDualMarketTimeRange('30d')" class="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm">30 days</button>
+                <button id="dualRange90d" onclick="updateDualMarketTimeRange('90d')" class="px-3 py-1 bg-blue-600 text-white rounded text-sm">90 days</button>
+                <button id="dualRange1yr" onclick="updateDualMarketTimeRange('1yr')" class="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm">1 year</button>
+                <button id="dualRangeall" onclick="updateDualMarketTimeRange('all')" class="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm">All time</button>
+            </div>
+            
+            <!-- Chart Container -->
+            <div class="bg-gray-50 rounded-lg p-4 relative" style="height: 400px;">
+                <canvas id="dualMarketChart"></canvas>
+                
+                <!-- Empty State -->
+                <div id="dualEmptyState" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
+                    <div class="text-4xl mb-4">
+                        <svg class="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-500 mb-2">Dual Market Comparison</h3>
+                    <p class="text-gray-400 text-center">Search for watches to compare wholesale vs retail pricing.<br/>Solid lines = Retail | Dashed lines = Wholesale</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Source Listings Modal -->
     <div id="sourceModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
         <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-96 overflow-hidden">
@@ -176,7 +242,7 @@
     <script src="https://cdn.jsdelivr.net/npm/date-fns@2.29.3/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@2.0.1/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script>
-        const API_URL = 'http://localhost:8000';
+        const API_URL = 'http://localhost:8001';
         let currentSelectedKey = null;
 
         // Tab Management
@@ -185,11 +251,13 @@
             document.getElementById('overviewContent').classList.add('hidden');
             document.getElementById('priceHistoryContent').classList.add('hidden');
             document.getElementById('priceSearchContent').classList.add('hidden');
+            document.getElementById('dualMarketContent').classList.add('hidden');
             
             // Reset tab styles
             document.getElementById('overviewTab').className = 'px-4 py-2 bg-gray-200 text-gray-700 rounded-t-lg font-medium hover:bg-gray-300';
             document.getElementById('priceHistoryTab').className = 'px-4 py-2 bg-gray-200 text-gray-700 rounded-t-lg font-medium hover:bg-gray-300';
             document.getElementById('priceSearchTab').className = 'px-4 py-2 bg-gray-200 text-gray-700 rounded-t-lg font-medium hover:bg-gray-300';
+            document.getElementById('dualMarketTab').className = 'px-4 py-2 bg-gray-200 text-gray-700 rounded-t-lg font-medium hover:bg-gray-300';
             
             // Show selected content and update tab style
             if (tabName === 'overview') {
@@ -203,6 +271,10 @@
                 document.getElementById('priceSearchContent').classList.remove('hidden');
                 document.getElementById('priceSearchTab').className = 'px-4 py-2 bg-blue-600 text-white rounded-t-lg font-medium';
                 initializePriceSearch();
+            } else if (tabName === 'dualMarket') {
+                document.getElementById('dualMarketContent').classList.remove('hidden');
+                document.getElementById('dualMarketTab').className = 'px-4 py-2 bg-blue-600 text-white rounded-t-lg font-medium';
+                loadMarginOpportunities();
             }
         }
 
@@ -901,6 +973,349 @@
 
         function closeSourceModal() {
             document.getElementById('sourceModal').classList.add('hidden');
+        }
+
+        // ============================================================================
+        // Epic #008: Dual Market (Wholesale) Functions
+        // ============================================================================
+        
+        let dualSelectedWatches = [];
+        let dualMarketChart = null;
+        let dualCurrentTimeRange = '90d';
+
+        async function dualMarketSearch(query) {
+            if (!query || query.length < 2) {
+                hideDualMarketDropdown();
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/api/dual-market-search?q=${encodeURIComponent(query)}&limit=10`);
+                const results = await response.json();
+                showDualMarketResults(results, query);
+            } catch (error) {
+                console.error('Dual market search error:', error);
+                showDualMarketError();
+            }
+        }
+
+        function showDualMarketResults(results, query) {
+            const dropdown = document.getElementById('dualSearchDropdown');
+            
+            if (results.length === 0) {
+                dropdown.innerHTML = `<div class="p-4 text-gray-500 text-center">No watches found for "${query}"</div>`;
+            } else {
+                const html = results.map(watch => {
+                    const isSelected = dualSelectedWatches.some(w => w.comparison_key === watch.comparison_key);
+                    const hasWholesale = watch.has_wholesale_data;
+                    const hasRetail = watch.has_retail_data;
+                    
+                    return `
+                        <div class="p-4 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                             onclick="selectDualMarketWatch('${watch.comparison_key}')" 
+                             ${isSelected ? 'style="opacity: 0.5;"' : ''}>
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <div class="font-semibold text-sm">${watch.display_title}</div>
+                                    <div class="text-xs text-gray-500 mt-1">Key: ${watch.comparison_key}</div>
+                                    <div class="flex space-x-2 mt-2 text-xs">
+                                        ${hasRetail ? `<span class="bg-blue-100 text-blue-800 px-2 py-1 rounded">Retail: ${watch.retail_listings_count}</span>` : ''}
+                                        ${hasWholesale ? `<span class="bg-green-100 text-green-800 px-2 py-1 rounded">Wholesale: ${watch.wholesale_listings_count}</span>` : ''}
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    ${hasRetail ? `<div class="text-sm text-blue-600">Retail: $${watch.avg_retail_price.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div>` : ''}
+                                    ${hasWholesale ? `<div class="text-sm text-green-600">Wholesale: $${watch.avg_wholesale_price.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div>` : ''}
+                                    ${watch.margin_percentage ? `<div class="text-xs text-orange-600 font-bold">${watch.margin_percentage.toFixed(1)}% margin</div>` : ''}
+                                    ${isSelected ? '<div class="text-xs text-green-600">✓ Added</div>' : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                dropdown.innerHTML = html;
+            }
+            
+            dropdown.classList.remove('hidden');
+        }
+
+        function showDualMarketError() {
+            const dropdown = document.getElementById('dualSearchDropdown');
+            dropdown.innerHTML = '<div class="p-4 text-red-500 text-center">Search error. Please try again.</div>';
+            dropdown.classList.remove('hidden');
+        }
+
+        function hideDualMarketDropdown() {
+            document.getElementById('dualSearchDropdown').classList.add('hidden');
+        }
+
+        async function selectDualMarketWatch(comparisonKey) {
+            if (dualSelectedWatches.length >= 5) {
+                alert('Maximum 5 watches can be compared at once');
+                return;
+            }
+
+            if (dualSelectedWatches.some(w => w.comparison_key === comparisonKey)) {
+                return; // Already selected
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/api/dual-market-search?q=${encodeURIComponent(comparisonKey)}&limit=1`);
+                const results = await response.json();
+                
+                if (results.length > 0) {
+                    const watch = results[0];
+                    watch.color = WATCH_COLORS[dualSelectedWatches.length];
+                    dualSelectedWatches.push(watch);
+                    
+                    document.getElementById('dualMarketSearch').value = '';
+                    hideDualMarketDropdown();
+                    
+                    updateDualMarketUI();
+                    await updateDualMarketChart();
+                }
+            } catch (error) {
+                console.error('Error selecting dual market watch:', error);
+                alert('Error adding watch. Please try again.');
+            }
+        }
+
+        function removeDualMarketWatch(comparisonKey) {
+            dualSelectedWatches = dualSelectedWatches.filter(w => w.comparison_key !== comparisonKey);
+            dualSelectedWatches.forEach((watch, index) => {
+                watch.color = WATCH_COLORS[index];
+            });
+            
+            updateDualMarketUI();
+            updateDualMarketChart();
+        }
+
+        function updateDualMarketUI() {
+            updateDualMarketPills();
+            
+            const hasWatches = dualSelectedWatches.length > 0;
+            document.getElementById('dualTimeRangeContainer').classList.toggle('hidden', !hasWatches);
+            document.getElementById('dualEmptyState').classList.toggle('hidden', hasWatches);
+        }
+
+        function updateDualMarketPills() {
+            const container = document.getElementById('dualWatchPillsContainer');
+            
+            if (dualSelectedWatches.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+            
+            const html = dualSelectedWatches.map(watch => `
+                <div class="inline-flex items-center bg-white rounded-lg shadow-sm border-2 px-4 py-3 mr-3 mb-3 cursor-pointer hover:shadow-md transition-shadow"
+                     style="border-color: ${watch.color}">
+                    <div class="w-3 h-3 rounded-full mr-3" style="background-color: ${watch.color}"></div>
+                    <div class="flex-1">
+                        <div class="font-semibold text-sm">${watch.brand} ${watch.model}</div>
+                        <div class="text-xs text-gray-600">Ref: ${watch.reference_number}</div>
+                        <div class="flex space-x-2 mt-1">
+                            ${watch.has_retail_data ? `<span class="text-xs bg-blue-100 text-blue-800 px-1 rounded">R: ${watch.retail_listings_count}</span>` : ''}
+                            ${watch.has_wholesale_data ? `<span class="text-xs bg-green-100 text-green-800 px-1 rounded">W: ${watch.wholesale_listings_count}</span>` : ''}
+                        </div>
+                    </div>
+                    <div class="text-right ml-4">
+                        ${watch.has_retail_data ? `<div class="text-xs text-blue-600">R: $${watch.avg_retail_price.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div>` : ''}
+                        ${watch.has_wholesale_data ? `<div class="text-xs text-green-600">W: $${watch.avg_wholesale_price.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div>` : ''}
+                        ${watch.margin_percentage ? `<div class="text-xs font-bold text-orange-600">${watch.margin_percentage.toFixed(1)}%</div>` : ''}
+                    </div>
+                    <button class="ml-3 text-gray-400 hover:text-red-500" 
+                            onclick="event.stopPropagation(); removeDualMarketWatch('${watch.comparison_key}')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+            `).join('');
+            
+            container.innerHTML = html;
+        }
+
+        async function updateDualMarketChart() {
+            if (dualSelectedWatches.length === 0) {
+                if (dualMarketChart) {
+                    dualMarketChart.destroy();
+                    dualMarketChart = null;
+                }
+                return;
+            }
+
+            try {
+                const priceHistoryPromises = dualSelectedWatches.map(async (watch) => {
+                    const response = await fetch(`${API_URL}/api/dual-market-history/${encodeURIComponent(watch.comparison_key)}?range=${dualCurrentTimeRange}`);
+                    const data = await response.json();
+                    return { watch, data };
+                });
+
+                const results = await Promise.all(priceHistoryPromises);
+                
+                const datasets = [];
+                
+                results.forEach(({ watch, data }) => {
+                    // Add retail price line
+                    if (watch.has_retail_data) {
+                        datasets.push({
+                            label: `${watch.brand} ${watch.model} - Retail`,
+                            data: data.price_points?.map(point => ({
+                                x: point.date,
+                                y: point.retail_price
+                            })).filter(p => p.y !== null) || [],
+                            borderColor: watch.color,
+                            backgroundColor: watch.color + '20',
+                            fill: false,
+                            tension: 0.1,
+                            borderWidth: 2
+                        });
+                    }
+                    
+                    // Add wholesale price line (dashed)
+                    if (watch.has_wholesale_data) {
+                        datasets.push({
+                            label: `${watch.brand} ${watch.model} - Wholesale`,
+                            data: data.price_points?.map(point => ({
+                                x: point.date,
+                                y: point.wholesale_price
+                            })).filter(p => p.y !== null) || [],
+                            borderColor: watch.color,
+                            backgroundColor: watch.color + '10',
+                            fill: false,
+                            tension: 0.1,
+                            borderWidth: 2,
+                            borderDash: [5, 5]
+                        });
+                    }
+                });
+
+                const ctx = document.getElementById('dualMarketChart').getContext('2d');
+                
+                if (dualMarketChart) {
+                    dualMarketChart.destroy();
+                }
+                
+                dualMarketChart = new Chart(ctx, {
+                    type: 'line',
+                    data: { datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: {
+                                    unit: 'day'
+                                },
+                                title: {
+                                    display: true,
+                                    text: 'Date'
+                                }
+                            },
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Price (USD)'
+                                },
+                                ticks: {
+                                    callback: function(value) {
+                                        return '$' + value.toLocaleString(undefined, {
+                                            minimumFractionDigits: 0,
+                                            maximumFractionDigits: 2
+                                        });
+                                    }
+                                }
+                            }
+                        },
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return context.dataset.label + ': $' + context.parsed.y.toLocaleString(undefined, {
+                                            minimumFractionDigits: 0,
+                                            maximumFractionDigits: 2
+                                        });
+                                    }
+                                }
+                            },
+                            legend: {
+                                position: 'top'
+                            }
+                        },
+                        interaction: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    }
+                });
+                
+            } catch (error) {
+                console.error('Error updating dual market chart:', error);
+            }
+        }
+
+        function updateDualMarketTimeRange(range) {
+            dualCurrentTimeRange = range;
+            
+            document.querySelectorAll('#dualTimeRangeContainer button').forEach(btn => {
+                btn.className = 'px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm';
+            });
+            document.getElementById(`dualRange${range}`).className = 'px-3 py-1 bg-blue-600 text-white rounded text-sm';
+            
+            updateDualMarketChart();
+        }
+
+        async function loadMarginOpportunities() {
+            try {
+                const response = await fetch(`${API_URL}/api/margin-opportunities?min_margin_percent=15&limit=20`);
+                const data = await response.json();
+                
+                const container = document.getElementById('marginOpportunities');
+                
+                if (data.opportunities && data.opportunities.length > 0) {
+                    const html = data.opportunities.map((opp, index) => `
+                        <div class="bg-white rounded-lg shadow p-4 border-l-4 border-orange-500">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h4 class="font-semibold text-lg">${opp.brand} ${opp.model}</h4>
+                                    <p class="text-sm text-gray-600">Ref: ${opp.reference_number}</p>
+                                    <p class="text-xs text-gray-500 mt-1">Key: ${opp.comparison_key}</p>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-2xl font-bold text-orange-600">$${opp.margin_dollars.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                                    <div class="text-sm text-gray-600">${opp.margin_percentage.toFixed(1)}% margin</div>
+                                </div>
+                            </div>
+                            <div class="mt-3 flex justify-between text-sm">
+                                <div class="text-green-600">
+                                    Wholesale: $${opp.avg_wholesale_price.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                    <span class="text-gray-400">(${opp.wholesale_listings} listings)</span>
+                                </div>
+                                <div class="text-blue-600">
+                                    Retail: $${opp.avg_retail_price.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                    <span class="text-gray-400">(${opp.retail_listings} listings)</span>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                    
+                    container.innerHTML = `
+                        <div class="mb-4 text-center">
+                            <div class="text-3xl font-bold text-green-600">$${data.total_potential_profit.toLocaleString()}</div>
+                            <div class="text-sm text-gray-600">Total Potential Profit from Top ${data.opportunities.length} Opportunities</div>
+                        </div>
+                        <div class="space-y-4">${html}</div>
+                    `;
+                } else {
+                    container.innerHTML = '<p class="text-gray-500 text-center py-8">No margin opportunities found. Add some wholesale data to see arbitrage potential.</p>';
+                }
+            } catch (error) {
+                console.error('Error loading margin opportunities:', error);
+                document.getElementById('marginOpportunities').innerHTML = '<p class="text-red-500 text-center py-8">Error loading margin opportunities.</p>';
+            }
         }
 
         // Load all data
