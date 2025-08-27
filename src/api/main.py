@@ -344,6 +344,230 @@ def backfill_price_history(db: Session = Depends(get_db)):
 
 
 # ============================================================================
+# Epic #008: Wholesale Market Integration - Dual Market Pricing Models
+# ============================================================================
+
+class DualMarketSearchResult(BaseModel):
+    """Enhanced search result with dual-market pricing"""
+    comparison_key: str
+    brand: str
+    model: str
+    reference_number: Optional[str] = None
+    
+    # Dual market pricing
+    avg_retail_price: Optional[float] = None
+    avg_wholesale_price: Optional[float] = None
+    retail_listings_count: int = 0
+    wholesale_listings_count: int = 0
+    
+    # Margin analysis
+    avg_dealer_margin: Optional[float] = None
+    margin_percentage: Optional[float] = None
+    
+    # Display fields
+    display_title: str
+    has_wholesale_data: bool = False
+    has_retail_data: bool = False
+
+class DualMarketPricePoint(BaseModel):
+    """Price point for dual-market charts"""
+    date: str
+    retail_price: Optional[float] = None
+    wholesale_price: Optional[float] = None
+
+# ============================================================================
+# Epic #008: Dual Market API Endpoints
+# ============================================================================
+
+@app.get("/api/dual-market-search", response_model=List[DualMarketSearchResult])
+def dual_market_search(q: str, limit: int = 10, db: Session = Depends(get_db)):
+    """Search showing both wholesale and retail pricing"""
+    from sqlalchemy import text
+    
+    # Use raw SQL to avoid SQLAlchemy CASE syntax issues
+    sql = text("""
+        SELECT 
+            comparison_key,
+            brand,
+            model,
+            reference_number,
+            AVG(CASE WHEN source_type = 'retail' THEN price_usd END) as avg_retail_price,
+            AVG(CASE WHEN source_type = 'wholesale' THEN price_usd END) as avg_wholesale_price,
+            COUNT(CASE WHEN source_type = 'retail' THEN 1 END) as retail_count,
+            COUNT(CASE WHEN source_type = 'wholesale' THEN 1 END) as wholesale_count
+        FROM watch_listings 
+        WHERE comparison_key IS NOT NULL 
+        AND is_active = true
+        AND (comparison_key ILIKE :search_term 
+             OR brand ILIKE :search_term 
+             OR model ILIKE :search_term 
+             OR reference_number ILIKE :search_term 
+             OR special_edition ILIKE :search_term)
+        GROUP BY comparison_key, brand, model, reference_number
+        LIMIT :limit_val
+    """)
+    
+    dual_market_data = db.execute(sql, {
+        'search_term': f'%{q}%',
+        'limit_val': limit
+    }).fetchall()
+    
+    results = []
+    for row in dual_market_data:
+        # Calculate margin metrics
+        margin_dollars = None
+        margin_percent = None
+        
+        if row.avg_retail_price and row.avg_wholesale_price:
+            margin_dollars = float(row.avg_retail_price) - float(row.avg_wholesale_price)
+            margin_percent = (margin_dollars / float(row.avg_wholesale_price)) * 100
+        
+        # Create display title
+        display_parts = [row.brand, row.model]
+        if row.reference_number:
+            display_parts.append(f"({row.reference_number})")
+        display_title = " ".join(display_parts)
+        
+        result = DualMarketSearchResult(
+            comparison_key=row.comparison_key,
+            brand=row.brand,
+            model=row.model,
+            reference_number=row.reference_number,
+            avg_retail_price=float(row.avg_retail_price) if row.avg_retail_price else None,
+            avg_wholesale_price=float(row.avg_wholesale_price) if row.avg_wholesale_price else None,
+            retail_listings_count=int(row.retail_count),
+            wholesale_listings_count=int(row.wholesale_count),
+            avg_dealer_margin=margin_dollars,
+            margin_percentage=margin_percent,
+            display_title=display_title,
+            has_wholesale_data=bool(row.avg_wholesale_price),
+            has_retail_data=bool(row.avg_retail_price)
+        )
+        results.append(result)
+    
+    return results
+
+@app.get("/api/dual-market-history/{comparison_key}")
+def get_dual_market_history(comparison_key: str, range: str = "90d", db: Session = Depends(get_db)):
+    """Get price history for both wholesale and retail markets"""
+    
+    # Parse range parameter
+    if range == "30d":
+        days_back = 30
+    elif range == "90d":
+        days_back = 90
+    elif range == "1yr":
+        days_back = 365
+    else:  # "all"
+        days_back = 9999
+    
+    cutoff_date = datetime.now() - timedelta(days=days_back)
+    
+    # Get price history data for both markets
+    history_query = db.query(
+        func.date(PriceHistory.timestamp).label('date'),
+        PriceHistory.source_type,
+        func.avg(PriceHistory.price_usd).label('avg_price')
+    ).filter(
+        and_(
+            PriceHistory.comparison_key == comparison_key,
+            PriceHistory.timestamp >= cutoff_date
+        )
+    ).group_by(
+        func.date(PriceHistory.timestamp),
+        PriceHistory.source_type
+    ).order_by(func.date(PriceHistory.timestamp)).all()
+    
+    # Organize data by date
+    price_by_date = {}
+    for row in history_query:
+        date_str = row.date.strftime('%Y-%m-%d')
+        if date_str not in price_by_date:
+            price_by_date[date_str] = {'retail_price': None, 'wholesale_price': None}
+        
+        if row.source_type == 'retail':
+            price_by_date[date_str]['retail_price'] = float(row.avg_price)
+        elif row.source_type == 'wholesale':
+            price_by_date[date_str]['wholesale_price'] = float(row.avg_price)
+    
+    # Convert to list of DualMarketPricePoint objects
+    price_points = []
+    for date_str in sorted(price_by_date.keys()):
+        point = DualMarketPricePoint(
+            date=date_str,
+            retail_price=price_by_date[date_str]['retail_price'],
+            wholesale_price=price_by_date[date_str]['wholesale_price']
+        )
+        price_points.append(point)
+    
+    return {
+        "comparison_key": comparison_key,
+        "range": range,
+        "price_points": price_points
+    }
+
+@app.get("/api/margin-opportunities")
+def get_margin_opportunities(min_margin_percent: float = 15.0, limit: int = 20, db: Session = Depends(get_db)):
+    """Get watches with highest wholesale to retail margins"""
+    from sqlalchemy import text
+    
+    # Use raw SQL for margin analysis
+    sql = text("""
+        SELECT 
+            comparison_key,
+            brand,
+            model,
+            reference_number,
+            AVG(CASE WHEN source_type = 'retail' THEN price_usd END) as avg_retail_price,
+            AVG(CASE WHEN source_type = 'wholesale' THEN price_usd END) as avg_wholesale_price,
+            COUNT(CASE WHEN source_type = 'retail' THEN 1 END) as retail_count,
+            COUNT(CASE WHEN source_type = 'wholesale' THEN 1 END) as wholesale_count,
+            (AVG(CASE WHEN source_type = 'retail' THEN price_usd END) - 
+             AVG(CASE WHEN source_type = 'wholesale' THEN price_usd END)) as margin_dollars,
+            ((AVG(CASE WHEN source_type = 'retail' THEN price_usd END) - 
+              AVG(CASE WHEN source_type = 'wholesale' THEN price_usd END)) / 
+              AVG(CASE WHEN source_type = 'wholesale' THEN price_usd END) * 100) as margin_percent
+        FROM watch_listings 
+        WHERE comparison_key IS NOT NULL 
+        AND is_active = true
+        GROUP BY comparison_key, brand, model, reference_number
+        HAVING AVG(CASE WHEN source_type = 'retail' THEN price_usd END) IS NOT NULL
+        AND AVG(CASE WHEN source_type = 'wholesale' THEN price_usd END) IS NOT NULL
+        AND ((AVG(CASE WHEN source_type = 'retail' THEN price_usd END) - 
+              AVG(CASE WHEN source_type = 'wholesale' THEN price_usd END)) / 
+              AVG(CASE WHEN source_type = 'wholesale' THEN price_usd END) * 100) >= :min_margin
+        ORDER BY margin_dollars DESC
+        LIMIT :limit_val
+    """)
+    
+    opportunities = db.execute(sql, {
+        'min_margin': min_margin_percent,
+        'limit_val': limit
+    }).fetchall()
+    
+    # Convert to response format
+    margin_data = []
+    for row in opportunities:
+        margin_data.append({
+            "comparison_key": row.comparison_key,
+            "brand": row.brand,
+            "model": row.model,
+            "reference_number": row.reference_number,
+            "avg_retail_price": float(row.avg_retail_price),
+            "avg_wholesale_price": float(row.avg_wholesale_price),
+            "margin_dollars": float(row.margin_dollars),
+            "margin_percentage": float(row.margin_percent),
+            "retail_listings": int(row.retail_count),
+            "wholesale_listings": int(row.wholesale_count)
+        })
+    
+    return {
+        "opportunities": margin_data,
+        "total_found": len(margin_data),
+        "total_potential_profit": sum(opp['margin_dollars'] for opp in margin_data)
+    }
+
+# ============================================================================
 # Epic #007: Interactive Price Search Dashboard - API Endpoints
 # ============================================================================
 
