@@ -2,9 +2,10 @@
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, or_
 from typing import List, Dict, Optional
 from pydantic import BaseModel
+from datetime import datetime, timedelta
 import sys
 import os
 
@@ -12,7 +13,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.connection import get_db
-from database.models import WatchListing
+from database.models import WatchListing, PriceHistory
 from services.price_history import PriceHistoryService
 
 app = FastAPI(title="Watch Market Intelligence API")
@@ -340,6 +341,350 @@ def backfill_price_history(db: Session = Depends(get_db)):
     service = PriceHistoryService(db)
     records_created = service.backfill_price_history()
     return {"message": f"Created {records_created} initial price history records"}
+
+
+# ============================================================================
+# Epic #007: Interactive Price Search Dashboard - API Endpoints
+# ============================================================================
+
+class SearchResult(BaseModel):
+    """Response model for search results"""
+    comparison_key: str
+    display_name: str
+    reference_number: Optional[str] = None
+    model: Optional[str] = None
+    brand: str
+    listing_count: int
+    avg_price: Optional[float] = None
+    latest_price: Optional[float] = None
+
+class PricePoint(BaseModel):
+    """Individual price point in time series"""
+    date: str  # ISO format date
+    avg_price: float
+    listing_count: int
+    min_price: float
+    max_price: float
+
+class SourceListing(BaseModel):
+    """Individual source listing"""
+    source: str
+    title: str
+    price_usd: float
+    url: str
+    scraped_at: str
+
+@app.get("/api/search", response_model=List[SearchResult])
+def search_watches(
+    q: str, 
+    group_variations: bool = False, 
+    limit: int = 10,
+    db: Session = Depends(get_db)
+):
+    """
+    Search watches by comparison key, model, or title
+    
+    Args:
+        q: Search query (e.g., "submariner", "1680", "tiffany")
+        group_variations: If True, group by reference number (1680) 
+                         If False, show all variations (1680-tiffany, 1680-standard)
+        limit: Maximum number of results to return
+    """
+    if not q or len(q.strip()) < 1:
+        return []
+    
+    query = q.lower().strip()
+    
+    if group_variations:
+        # Group by reference number, show one representative per reference
+        results = db.query(
+            WatchListing.reference_number,
+            WatchListing.brand,
+            WatchListing.model,
+            func.count(WatchListing.id).label('listing_count'),
+            func.avg(WatchListing.price_usd).label('avg_price'),
+            func.max(WatchListing.last_updated).label('latest_update')
+        ).filter(
+            WatchListing.is_active == True,
+            WatchListing.reference_number.isnot(None),
+            or_(
+                WatchListing.reference_number.ilike(f'%{query}%'),
+                WatchListing.model.ilike(f'%{query}%'),
+                WatchListing.brand.ilike(f'%{query}%')
+            )
+        ).group_by(
+            WatchListing.reference_number,
+            WatchListing.brand,
+            WatchListing.model
+        ).order_by(
+            func.count(WatchListing.id).desc()  # Most listings first
+        ).limit(limit).all()
+        
+        search_results = []
+        for result in results:
+            # Get a representative comparison key for this reference
+            sample_listing = db.query(WatchListing.comparison_key).filter(
+                WatchListing.reference_number == result.reference_number,
+                WatchListing.brand == result.brand,
+                WatchListing.is_active == True
+            ).first()
+            
+            display_name = f"{result.brand} {result.model} {result.reference_number}"
+            
+            search_results.append(SearchResult(
+                comparison_key=sample_listing.comparison_key if sample_listing else f"{result.reference_number}-standard",
+                display_name=display_name,
+                reference_number=result.reference_number,
+                model=result.model,
+                brand=result.brand,
+                listing_count=result.listing_count,
+                avg_price=result.avg_price,
+                latest_price=result.avg_price
+            ))
+            
+    else:
+        # Show all individual variations
+        results = db.query(
+            WatchListing.comparison_key,
+            WatchListing.reference_number,
+            WatchListing.brand,
+            WatchListing.model,
+            WatchListing.special_edition,
+            func.count(WatchListing.id).label('listing_count'),
+            func.avg(WatchListing.price_usd).label('avg_price'),
+            func.max(WatchListing.price_usd).label('latest_price')
+        ).filter(
+            WatchListing.is_active == True,
+            WatchListing.comparison_key.isnot(None),
+            or_(
+                WatchListing.comparison_key.ilike(f'%{query}%'),
+                WatchListing.model.ilike(f'%{query}%'),
+                WatchListing.brand.ilike(f'%{query}%'),
+                WatchListing.reference_number.ilike(f'%{query}%'),
+                WatchListing.special_edition.ilike(f'%{query}%')
+            )
+        ).group_by(
+            WatchListing.comparison_key,
+            WatchListing.reference_number,
+            WatchListing.brand,
+            WatchListing.model,
+            WatchListing.special_edition
+        ).order_by(
+            func.count(WatchListing.id).desc()
+        ).limit(limit).all()
+        
+        search_results = []
+        for result in results:
+            # Build display name with special edition info
+            display_name = f"{result.brand} {result.model}"
+            if result.reference_number:
+                display_name += f" {result.reference_number}"
+            if result.special_edition:
+                display_name += f" ({result.special_edition})"
+                
+            search_results.append(SearchResult(
+                comparison_key=result.comparison_key,
+                display_name=display_name,
+                reference_number=result.reference_number,
+                model=result.model,
+                brand=result.brand,
+                listing_count=result.listing_count,
+                avg_price=result.avg_price,
+                latest_price=result.latest_price
+            ))
+    
+    return search_results
+
+@app.get("/api/price-history-enhanced")
+def get_enhanced_price_history(
+    comparison_key: str,
+    range: str = "90d",  # 30d, 90d, 1y, all
+    db: Session = Depends(get_db)
+):
+    """
+    Enhanced price history endpoint for Epic #007 dashboard
+    
+    Args:
+        comparison_key: The watch comparison key (e.g., "1680-tiffany")
+        range: Time range - "30d", "90d", "1y", "all"
+    """
+    # Calculate date range
+    end_date = datetime.now()
+    start_date = None
+    
+    if range == "30d":
+        start_date = end_date - timedelta(days=30)
+    elif range == "90d":
+        start_date = end_date - timedelta(days=90)
+    elif range == "1y":
+        start_date = end_date - timedelta(days=365)
+    # range == "all" leaves start_date as None
+    
+    # Query price history aggregated by date
+    query = db.query(
+        func.date(WatchListing.last_updated).label('date'),
+        func.avg(WatchListing.price_usd).label('avg_price'),
+        func.count(WatchListing.id).label('listing_count'),
+        func.min(WatchListing.price_usd).label('min_price'),
+        func.max(WatchListing.price_usd).label('max_price')
+    ).filter(
+        WatchListing.comparison_key == comparison_key,
+        WatchListing.is_active == True
+    )
+    
+    if start_date:
+        query = query.filter(WatchListing.last_updated >= start_date)
+    
+    results = query.group_by(
+        func.date(WatchListing.last_updated)
+    ).order_by('date').all()
+    
+    # If no direct history, try to get from price_history table
+    if not results:
+        history_query = db.query(
+            func.date(PriceHistory.timestamp).label('date'),
+            func.avg(PriceHistory.price_usd).label('avg_price'),
+            func.count(PriceHistory.id).label('listing_count'),
+            func.min(PriceHistory.price_usd).label('min_price'),
+            func.max(PriceHistory.price_usd).label('max_price')
+        ).filter(PriceHistory.comparison_key == comparison_key)
+        
+        if start_date:
+            history_query = history_query.filter(PriceHistory.timestamp >= start_date)
+            
+        results = history_query.group_by(
+            func.date(PriceHistory.timestamp)
+        ).order_by('date').all()
+    
+    # Convert to response format
+    price_points = []
+    for result in results:
+        price_points.append(PricePoint(
+            date=result.date.isoformat(),
+            avg_price=float(result.avg_price),
+            listing_count=result.listing_count,
+            min_price=float(result.min_price),
+            max_price=float(result.max_price)
+        ))
+    
+    # Get watch info for metadata
+    watch_info = db.query(WatchListing).filter(
+        WatchListing.comparison_key == comparison_key,
+        WatchListing.is_active == True
+    ).first()
+    
+    return {
+        "comparison_key": comparison_key,
+        "range": range,
+        "watch_info": {
+            "brand": watch_info.brand if watch_info else "Unknown",
+            "model": watch_info.model if watch_info else "Unknown", 
+            "reference": watch_info.reference_number if watch_info else None,
+            "special_edition": watch_info.special_edition if watch_info else None
+        } if watch_info else None,
+        "price_history": price_points,
+        "summary": {
+            "total_data_points": len(price_points),
+            "date_range": {
+                "start": price_points[0].date if price_points else None,
+                "end": price_points[-1].date if price_points else None
+            },
+            "price_range": {
+                "min": min(p.avg_price for p in price_points) if price_points else 0,
+                "max": max(p.avg_price for p in price_points) if price_points else 0,
+                "current": price_points[-1].avg_price if price_points else 0
+            }
+        }
+    }
+
+@app.get("/api/source-listings")
+def get_source_listings(
+    comparison_key: str,
+    date: str,  # YYYY-MM-DD format
+    db: Session = Depends(get_db)
+):
+    """
+    Get individual source listings for a specific comparison key on a specific date
+    Used for modal popup showing source transparency
+    
+    Args:
+        comparison_key: Watch comparison key
+        date: Date in YYYY-MM-DD format
+    """
+    try:
+        target_date = datetime.strptime(date, '%Y-%m-%d')
+    except ValueError:
+        return {"error": "Invalid date format. Use YYYY-MM-DD"}
+    
+    # Get listings for that specific date (with some tolerance)
+    start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_of_day = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+    
+    # First try current listings
+    listings = db.query(WatchListing).filter(
+        WatchListing.comparison_key == comparison_key,
+        WatchListing.last_updated.between(start_of_day, end_of_day),
+        WatchListing.is_active == True
+    ).order_by(WatchListing.price_usd).all()
+    
+    # If no current listings, try price history
+    if not listings:
+        price_history_records = db.query(PriceHistory).filter(
+            PriceHistory.comparison_key == comparison_key,
+            PriceHistory.timestamp.between(start_of_day, end_of_day)
+        ).order_by(PriceHistory.price_usd).all()
+        
+        # Convert price history to listing format
+        source_listings = []
+        for record in price_history_records:
+            source_listings.append(SourceListing(
+                source=record.source,
+                title=f"{record.brand} {record.model} {record.reference_number or ''}",
+                price_usd=record.price_usd,
+                url=record.url,
+                scraped_at=record.timestamp.isoformat()
+            ))
+    else:
+        # Convert current listings to response format
+        source_listings = []
+        for listing in listings:
+            source_listings.append(SourceListing(
+                source=listing.source,
+                title=listing.model + (f" {listing.reference_number}" if listing.reference_number else ""),
+                price_usd=listing.price_usd,
+                url=listing.url,
+                scraped_at=listing.last_updated.isoformat()
+            ))
+    
+    # Calculate summary stats for this date
+    if source_listings:
+        prices = [listing.price_usd for listing in source_listings]
+        avg_price = sum(prices) / len(prices)
+        
+        summary = {
+            "date": date,
+            "comparison_key": comparison_key,
+            "listing_count": len(source_listings),
+            "avg_price": round(avg_price, 2),
+            "min_price": min(prices),
+            "max_price": max(prices),
+            "price_spread": max(prices) - min(prices)
+        }
+    else:
+        summary = {
+            "date": date,
+            "comparison_key": comparison_key,
+            "listing_count": 0,
+            "avg_price": 0,
+            "min_price": 0,
+            "max_price": 0,
+            "price_spread": 0
+        }
+    
+    return {
+        "summary": summary,
+        "listings": source_listings
+    }
 
 if __name__ == "__main__":
     import uvicorn
