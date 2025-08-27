@@ -16,6 +16,7 @@
         <div class="flex space-x-1 mb-8">
             <button id="overviewTab" class="px-4 py-2 bg-blue-600 text-white rounded-t-lg font-medium" onclick="showTab('overview')">Overview</button>
             <button id="priceHistoryTab" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-t-lg font-medium hover:bg-gray-300" onclick="showTab('priceHistory')">Price History</button>
+            <button id="priceSearchTab" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-t-lg font-medium hover:bg-gray-300" onclick="showTab('priceSearch')">🔍 Price Search</button>
         </div>
 
         <!-- Overview Tab Content -->
@@ -86,8 +87,94 @@
                 <div id="priceHistoryTrends" class="mt-6"></div>
             </div>
         </div>
+
+        <!-- Epic #007: Interactive Price Search Tab Content -->
+        <div id="priceSearchContent" class="hidden">
+            <!-- Search Interface -->
+            <div class="bg-white rounded-lg shadow p-6 mb-8">
+                <h2 class="text-xl font-bold mb-4">🔍 Interactive Price Search</h2>
+                <p class="text-sm text-gray-600 mb-6">Search watches by model, reference, or variation. Compare up to 5 watches simultaneously.</p>
+                
+                <!-- Search Bar -->
+                <div class="relative mb-4">
+                    <input 
+                        type="text" 
+                        id="watchSearch" 
+                        placeholder="Search watches (e.g., 'Submariner', '1680', 'Tiffany')..." 
+                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        autocomplete="off"
+                    >
+                    <div id="searchDropdown" class="absolute top-full left-0 right-0 bg-white border border-gray-300 border-t-0 rounded-b-lg shadow-lg max-h-60 overflow-y-auto hidden z-10">
+                        <!-- Search results will populate here -->
+                    </div>
+                </div>
+
+                <!-- Variation Toggle -->
+                <div class="mb-6">
+                    <label class="flex items-center space-x-3">
+                        <input type="checkbox" id="groupVariations" class="form-checkbox h-4 w-4 text-blue-600">
+                        <span class="text-sm text-gray-700">Group by Reference Number (hide individual variations like Tiffany, Gold, etc.)</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Selected Watches Pills -->
+            <div id="watchPillsContainer" class="mb-8">
+                <!-- Watch pills will be populated here -->
+            </div>
+
+            <!-- Time Range Selector -->
+            <div class="bg-white rounded-lg shadow p-6 mb-8 hidden" id="timeRangeContainer">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold">Price History Comparison</h3>
+                    <div class="flex space-x-2">
+                        <button onclick="updateTimeRange('30d')" class="px-3 py-1 bg-blue-600 text-white rounded text-sm" id="range30d">30 days</button>
+                        <button onclick="updateTimeRange('90d')" class="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm" id="range90d">90 days</button>
+                        <button onclick="updateTimeRange('1y')" class="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm" id="range1y">1 year</button>
+                        <button onclick="updateTimeRange('all')" class="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm" id="rangeAll">All Time</button>
+                    </div>
+                </div>
+                
+                <!-- Chart Container -->
+                <div class="h-96">
+                    <canvas id="priceComparisonChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Empty State -->
+            <div id="emptySearchState" class="bg-white rounded-lg shadow p-12 text-center">
+                <div class="text-gray-400 mb-4">
+                    <svg class="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-500 mb-2">Search for watches to compare</h3>
+                <p class="text-gray-400">Start typing in the search box above to find watches by model, reference number, or special edition.</p>
+            </div>
+        </div>
     </div>
 
+    <!-- Source Listings Modal -->
+    <div id="sourceModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-96 overflow-hidden">
+            <div class="flex items-center justify-between p-6 border-b">
+                <h3 class="text-lg font-semibold" id="modalTitle">Source Listings</h3>
+                <button onclick="closeSourceModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto max-h-80" id="modalContent">
+                <!-- Modal content will be populated here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Include Chart.js with time adapter -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@2.29.3/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@2.0.1/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script>
         const API_URL = 'http://localhost:8000';
         let currentSelectedKey = null;
@@ -97,10 +184,12 @@
             // Hide all content
             document.getElementById('overviewContent').classList.add('hidden');
             document.getElementById('priceHistoryContent').classList.add('hidden');
+            document.getElementById('priceSearchContent').classList.add('hidden');
             
             // Reset tab styles
             document.getElementById('overviewTab').className = 'px-4 py-2 bg-gray-200 text-gray-700 rounded-t-lg font-medium hover:bg-gray-300';
             document.getElementById('priceHistoryTab').className = 'px-4 py-2 bg-gray-200 text-gray-700 rounded-t-lg font-medium hover:bg-gray-300';
+            document.getElementById('priceSearchTab').className = 'px-4 py-2 bg-gray-200 text-gray-700 rounded-t-lg font-medium hover:bg-gray-300';
             
             // Show selected content and update tab style
             if (tabName === 'overview') {
@@ -110,6 +199,10 @@
                 document.getElementById('priceHistoryContent').classList.remove('hidden');
                 document.getElementById('priceHistoryTab').className = 'px-4 py-2 bg-blue-600 text-white rounded-t-lg font-medium';
                 loadPriceHistoryList();
+            } else if (tabName === 'priceSearch') {
+                document.getElementById('priceSearchContent').classList.remove('hidden');
+                document.getElementById('priceSearchTab').className = 'px-4 py-2 bg-blue-600 text-white rounded-t-lg font-medium';
+                initializePriceSearch();
             }
         }
 
@@ -374,6 +467,415 @@
             `;
 
             document.getElementById('referenceAnalysis').innerHTML = html;
+        }
+
+        // Epic #007: Price Search Functionality
+        let selectedWatches = [];
+        let priceChart = null;
+        let currentTimeRange = '30d';
+        let searchTimeout = null;
+        const WATCH_COLORS = [
+            '#3B82F6', // Blue
+            '#10B981', // Green
+            '#F59E0B', // Yellow
+            '#EF4444', // Red
+            '#8B5CF6'  // Purple
+        ];
+
+        function initializePriceSearch() {
+            // Setup event listeners
+            setupSearchListeners();
+            updateUIState();
+        }
+
+        function setupSearchListeners() {
+            const searchInput = document.getElementById('watchSearch');
+            const searchDropdown = document.getElementById('searchDropdown');
+            const groupVariations = document.getElementById('groupVariations');
+
+            // Search input with debounce
+            searchInput.addEventListener('input', (e) => {
+                clearTimeout(searchTimeout);
+                const query = e.target.value.trim();
+                
+                if (query.length < 2) {
+                    hideSearchDropdown();
+                    return;
+                }
+                
+                searchTimeout = setTimeout(() => {
+                    performSearch(query);
+                }, 300);
+            });
+
+            // Hide dropdown when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!searchInput.contains(e.target) && !searchDropdown.contains(e.target)) {
+                    hideSearchDropdown();
+                }
+            });
+
+            // Variation toggle
+            groupVariations.addEventListener('change', () => {
+                const query = searchInput.value.trim();
+                if (query.length >= 2) {
+                    performSearch(query);
+                }
+            });
+
+            // Keyboard navigation
+            searchInput.addEventListener('keydown', (e) => {
+                const items = searchDropdown.querySelectorAll('[data-comparison-key]');
+                const activeItem = searchDropdown.querySelector('.bg-blue-100');
+                
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (!activeItem) {
+                        items[0]?.classList.add('bg-blue-100');
+                    } else {
+                        activeItem.classList.remove('bg-blue-100');
+                        const next = activeItem.nextElementSibling;
+                        if (next) next.classList.add('bg-blue-100');
+                    }
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (activeItem) {
+                        activeItem.classList.remove('bg-blue-100');
+                        const prev = activeItem.previousElementSibling;
+                        if (prev) prev.classList.add('bg-blue-100');
+                    }
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const active = searchDropdown.querySelector('.bg-blue-100');
+                    if (active) {
+                        const comparisonKey = active.getAttribute('data-comparison-key');
+                        selectWatch(comparisonKey);
+                    }
+                } else if (e.key === 'Escape') {
+                    hideSearchDropdown();
+                    searchInput.blur();
+                }
+            });
+        }
+
+        async function performSearch(query) {
+            const groupVariations = document.getElementById('groupVariations').checked;
+            
+            try {
+                const response = await fetch(`${API_URL}/api/search?q=${encodeURIComponent(query)}&group_variations=${groupVariations}&limit=10`);
+                const results = await response.json();
+                
+                displaySearchResults(results);
+            } catch (error) {
+                console.error('Search error:', error);
+                showSearchError();
+            }
+        }
+
+        function displaySearchResults(results) {
+            const dropdown = document.getElementById('searchDropdown');
+            
+            if (results.length === 0) {
+                dropdown.innerHTML = '<div class="p-4 text-gray-500 text-center">No watches found</div>';
+            } else {
+                const html = results.map(watch => {
+                    const isSelected = selectedWatches.some(w => w.comparison_key === watch.comparison_key);
+                    const disabledClass = isSelected ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50 cursor-pointer';
+                    
+                    return `
+                        <div class="p-4 border-b border-gray-100 ${disabledClass}" 
+                             data-comparison-key="${watch.comparison_key}"
+                             onclick="${!isSelected ? `selectWatch('${watch.comparison_key}')` : ''}">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <div class="font-semibold">${watch.brand} ${watch.model}</div>
+                                    <div class="text-sm text-gray-600">Ref: ${watch.reference_number}</div>
+                                    ${watch.comparison_key !== watch.reference_number ? 
+                                        `<div class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded inline-block mt-1">
+                                            ${watch.comparison_key.replace(watch.reference_number + '-', '')}
+                                        </div>` : ''}
+                                </div>
+                                <div class="text-right">
+                                    <div class="font-bold">$${watch.avg_price.toLocaleString()}</div>
+                                    <div class="text-sm text-gray-500">${watch.listing_count} listings</div>
+                                    ${isSelected ? '<div class="text-xs text-green-600">✓ Added</div>' : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                dropdown.innerHTML = html;
+            }
+            
+            dropdown.classList.remove('hidden');
+        }
+
+        function showSearchError() {
+            const dropdown = document.getElementById('searchDropdown');
+            dropdown.innerHTML = '<div class="p-4 text-red-500 text-center">Search error. Please try again.</div>';
+            dropdown.classList.remove('hidden');
+        }
+
+        function hideSearchDropdown() {
+            document.getElementById('searchDropdown').classList.add('hidden');
+        }
+
+        async function selectWatch(comparisonKey) {
+            if (selectedWatches.length >= 5) {
+                alert('Maximum 5 watches can be compared at once');
+                return;
+            }
+
+            if (selectedWatches.some(w => w.comparison_key === comparisonKey)) {
+                return; // Already selected
+            }
+
+            try {
+                // Get watch details
+                const response = await fetch(`${API_URL}/api/search?q=${encodeURIComponent(comparisonKey)}&limit=1`);
+                const results = await response.json();
+                
+                if (results.length > 0) {
+                    const watch = results[0];
+                    watch.color = WATCH_COLORS[selectedWatches.length];
+                    selectedWatches.push(watch);
+                    
+                    // Clear search
+                    document.getElementById('watchSearch').value = '';
+                    hideSearchDropdown();
+                    
+                    updateUIState();
+                    await updateChart();
+                }
+            } catch (error) {
+                console.error('Error selecting watch:', error);
+                alert('Error adding watch. Please try again.');
+            }
+        }
+
+        function removeWatch(comparisonKey) {
+            selectedWatches = selectedWatches.filter(w => w.comparison_key !== comparisonKey);
+            // Reassign colors to maintain order
+            selectedWatches.forEach((watch, index) => {
+                watch.color = WATCH_COLORS[index];
+            });
+            
+            updateUIState();
+            updateChart();
+        }
+
+        function updateUIState() {
+            // Update pills
+            updateWatchPills();
+            
+            // Show/hide chart container and empty state
+            const hasWatches = selectedWatches.length > 0;
+            document.getElementById('timeRangeContainer').classList.toggle('hidden', !hasWatches);
+            document.getElementById('emptySearchState').classList.toggle('hidden', hasWatches);
+        }
+
+        function updateWatchPills() {
+            const container = document.getElementById('watchPillsContainer');
+            
+            if (selectedWatches.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+            
+            const html = selectedWatches.map(watch => `
+                <div class="inline-flex items-center bg-white rounded-lg shadow-sm border-2 px-4 py-3 mr-3 mb-3 cursor-pointer hover:shadow-md transition-shadow"
+                     style="border-color: ${watch.color}"
+                     onclick="showSourceListings('${watch.comparison_key}')">
+                    <div class="w-3 h-3 rounded-full mr-3" style="background-color: ${watch.color}"></div>
+                    <div class="flex-1">
+                        <div class="font-semibold text-sm">${watch.brand} ${watch.model}</div>
+                        <div class="text-xs text-gray-600">Ref: ${watch.reference_number}</div>
+                        ${watch.comparison_key !== watch.reference_number ? 
+                            `<div class="text-xs text-gray-500 mt-1">
+                                ${watch.comparison_key.replace(watch.reference_number + '-', '')}
+                            </div>` : ''}
+                    </div>
+                    <div class="text-right ml-4">
+                        <div class="font-bold text-sm">$${watch.avg_price.toLocaleString()}</div>
+                        <div class="text-xs text-gray-500">${watch.listing_count} listings</div>
+                    </div>
+                    <button class="ml-3 text-gray-400 hover:text-red-500" 
+                            onclick="event.stopPropagation(); removeWatch('${watch.comparison_key}')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+            `).join('');
+            
+            container.innerHTML = html;
+        }
+
+        async function updateChart() {
+            if (selectedWatches.length === 0) {
+                if (priceChart) {
+                    priceChart.destroy();
+                    priceChart = null;
+                }
+                return;
+            }
+
+            try {
+                // Fetch price history for all selected watches
+                const priceHistoryPromises = selectedWatches.map(async (watch) => {
+                    const response = await fetch(`${API_URL}/api/price-history-enhanced?comparison_key=${encodeURIComponent(watch.comparison_key)}&range=${currentTimeRange}`);
+                    const data = await response.json();
+                    return { watch, data };
+                });
+
+                const results = await Promise.all(priceHistoryPromises);
+                
+                // Create Chart.js datasets
+                const datasets = results.map(({ watch, data }) => ({
+                    label: `${watch.brand} ${watch.model} (${watch.reference_number})`,
+                    data: data.price_history?.map(point => ({
+                        x: point.date,
+                        y: point.avg_price
+                    })) || [],
+                    borderColor: watch.color,
+                    backgroundColor: watch.color + '20',
+                    fill: false,
+                    tension: 0.1
+                }));
+
+                // Update or create chart
+                const ctx = document.getElementById('priceComparisonChart').getContext('2d');
+                
+                if (priceChart) {
+                    priceChart.destroy();
+                }
+                
+                priceChart = new Chart(ctx, {
+                    type: 'line',
+                    data: { datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: {
+                                    unit: 'day'
+                                },
+                                title: {
+                                    display: true,
+                                    text: 'Date'
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Price (USD)'
+                                },
+                                ticks: {
+                                    callback: function(value) {
+                                        return '$' + value.toLocaleString();
+                                    }
+                                }
+                            }
+                        },
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return context.dataset.label + ': $' + context.parsed.y.toLocaleString();
+                                    }
+                                }
+                            },
+                            legend: {
+                                position: 'top'
+                            }
+                        },
+                        interaction: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    }
+                });
+                
+            } catch (error) {
+                console.error('Error updating chart:', error);
+            }
+        }
+
+        function updateTimeRange(range) {
+            currentTimeRange = range;
+            
+            // Update button styles
+            document.querySelectorAll('#timeRangeContainer button').forEach(btn => {
+                btn.className = 'px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm';
+            });
+            document.getElementById(`range${range}`).className = 'px-3 py-1 bg-blue-600 text-white rounded text-sm';
+            
+            updateChart();
+        }
+
+        async function showSourceListings(comparisonKey) {
+            const watch = selectedWatches.find(w => w.comparison_key === comparisonKey);
+            if (!watch) return;
+
+            try {
+                // For now, we'll use a recent date. In production, this would be tied to chart interaction
+                const today = new Date().toISOString().split('T')[0];
+                const response = await fetch(`${API_URL}/api/source-listings?comparison_key=${encodeURIComponent(comparisonKey)}&date=${today}`);
+                const data = await response.json();
+
+                const modal = document.getElementById('sourceModal');
+                const title = document.getElementById('modalTitle');
+                const content = document.getElementById('modalContent');
+
+                title.textContent = `Source Listings - ${watch.brand} ${watch.model}`;
+
+                if (data.listings && data.listings.length > 0) {
+                    const html = data.listings.map(listing => `
+                        <div class="border-b border-gray-200 pb-4 mb-4 last:border-b-0">
+                            <div class="flex justify-between items-start mb-2">
+                                <div>
+                                    <div class="font-semibold">${listing.source.replace('_', ' ').toUpperCase()}</div>
+                                    <div class="text-sm text-gray-600">${listing.title}</div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="font-bold text-lg">$${listing.price_usd.toLocaleString()}</div>
+                                    <div class="text-xs text-gray-400">Scraped: ${new Date(listing.scraped_at).toLocaleDateString()}</div>
+                                </div>
+                            </div>
+                            <a href="${listing.url}" target="_blank" class="text-blue-500 hover:underline text-sm">
+                                View Listing →
+                            </a>
+                        </div>
+                    `).join('');
+                    
+                    // Add summary info at the top
+                    const summaryHtml = `
+                        <div class="bg-gray-50 rounded-lg p-4 mb-4">
+                            <div class="flex justify-between items-center text-sm">
+                                <div><strong>${data.summary.listing_count}</strong> listings found</div>
+                                <div>Avg: <strong>$${data.summary.avg_price.toLocaleString()}</strong></div>
+                                <div>Range: $${data.summary.min_price.toLocaleString()} - $${data.summary.max_price.toLocaleString()}</div>
+                            </div>
+                        </div>
+                    `;
+                    
+                    content.innerHTML = summaryHtml + html;
+                } else {
+                    content.innerHTML = '<p class="text-gray-500 text-center py-8">No current listings found for this watch.</p>';
+                }
+
+                modal.classList.remove('hidden');
+            } catch (error) {
+                console.error('Error loading source listings:', error);
+                alert('Error loading source listings. Please try again.');
+            }
+        }
+
+        function closeSourceModal() {
+            document.getElementById('sourceModal').classList.add('hidden');
         }
 
         // Load all data
