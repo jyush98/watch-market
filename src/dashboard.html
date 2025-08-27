@@ -596,7 +596,10 @@
                                         </div>` : ''}
                                 </div>
                                 <div class="text-right">
-                                    <div class="font-bold">$${watch.avg_price.toLocaleString()}</div>
+                                    <div class="font-bold">$${watch.avg_price.toLocaleString(undefined, {
+                                        minimumFractionDigits: 0,
+                                        maximumFractionDigits: 2
+                                    })}</div>
                                     <div class="text-sm text-gray-500">${watch.listing_count} listings</div>
                                     ${isSelected ? '<div class="text-xs text-green-600">✓ Added</div>' : ''}
                                 </div>
@@ -697,7 +700,10 @@
                             </div>` : ''}
                     </div>
                     <div class="text-right ml-4">
-                        <div class="font-bold text-sm">$${watch.avg_price.toLocaleString()}</div>
+                        <div class="font-bold text-sm">$${watch.avg_price.toLocaleString(undefined, {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 2
+                        })}</div>
                         <div class="text-xs text-gray-500">${watch.listing_count} listings</div>
                     </div>
                     <button class="ml-3 text-gray-400 hover:text-red-500" 
@@ -769,13 +775,17 @@
                                 }
                             },
                             y: {
+                                beginAtZero: true,
                                 title: {
                                     display: true,
                                     text: 'Price (USD)'
                                 },
                                 ticks: {
                                     callback: function(value) {
-                                        return '$' + value.toLocaleString();
+                                        return '$' + value.toLocaleString(undefined, {
+                                            minimumFractionDigits: 0,
+                                            maximumFractionDigits: 2
+                                        });
                                     }
                                 }
                             }
@@ -784,7 +794,10 @@
                             tooltip: {
                                 callbacks: {
                                     label: function(context) {
-                                        return context.dataset.label + ': $' + context.parsed.y.toLocaleString();
+                                        return context.dataset.label + ': $' + context.parsed.y.toLocaleString(undefined, {
+                                            minimumFractionDigits: 0,
+                                            maximumFractionDigits: 2
+                                        });
                                     }
                                 }
                             },
@@ -821,9 +834,9 @@
             if (!watch) return;
 
             try {
-                // For now, we'll use a recent date. In production, this would be tied to chart interaction
-                const today = new Date().toISOString().split('T')[0];
-                const response = await fetch(`${API_URL}/api/source-listings?comparison_key=${encodeURIComponent(comparisonKey)}&date=${today}`);
+                // Use the scraped date (2025-08-26) since that's when our data was collected
+                const scrapedDate = '2025-08-26';
+                const response = await fetch(`${API_URL}/api/source-listings?comparison_key=${encodeURIComponent(comparisonKey)}&date=${scrapedDate}`);
                 const data = await response.json();
 
                 const modal = document.getElementById('sourceModal');
@@ -841,7 +854,10 @@
                                     <div class="text-sm text-gray-600">${listing.title}</div>
                                 </div>
                                 <div class="text-right">
-                                    <div class="font-bold text-lg">$${listing.price_usd.toLocaleString()}</div>
+                                    <div class="font-bold text-lg">$${listing.price_usd.toLocaleString(undefined, {
+                                        minimumFractionDigits: 0,
+                                        maximumFractionDigits: 2
+                                    })}</div>
                                     <div class="text-xs text-gray-400">Scraped: ${new Date(listing.scraped_at).toLocaleDateString()}</div>
                                 </div>
                             </div>
@@ -856,8 +872,17 @@
                         <div class="bg-gray-50 rounded-lg p-4 mb-4">
                             <div class="flex justify-between items-center text-sm">
                                 <div><strong>${data.summary.listing_count}</strong> listings found</div>
-                                <div>Avg: <strong>$${data.summary.avg_price.toLocaleString()}</strong></div>
-                                <div>Range: $${data.summary.min_price.toLocaleString()} - $${data.summary.max_price.toLocaleString()}</div>
+                                <div>Avg: <strong>$${data.summary.avg_price.toLocaleString(undefined, {
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 2
+                                })}</strong></div>
+                                <div>Range: $${data.summary.min_price.toLocaleString(undefined, {
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 2
+                                })} - $${data.summary.max_price.toLocaleString(undefined, {
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 2
+                                })}</div>
                             </div>
                         </div>
                     `;

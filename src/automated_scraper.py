@@ -271,18 +271,15 @@ Please check the system logs and resolve the issue.
     
     def setup_schedule(self):
         """Setup automated scheduling"""
-        # Daily comprehensive update at 6 AM
+        # Full update every 12 hours (6 AM and 6 PM)
         schedule.every().day.at("06:00").do(self.run_scheduled_update)
-        
-        # Quick update every 4 hours during business hours
-        schedule.every(4).hours.do(self.run_quick_update)
+        schedule.every().day.at("18:00").do(self.run_scheduled_update)
         
         # Weekly comprehensive analysis
         schedule.every().sunday.at("07:00").do(self.run_weekly_analysis)
         
         logger.info("📅 Automated schedule configured:")
-        logger.info("   • Daily full update: 6:00 AM")
-        logger.info("   • Quick updates: Every 4 hours")
+        logger.info("   • Full updates: 6:00 AM and 6:00 PM daily")
         logger.info("   • Weekly analysis: Sunday 7:00 AM")
     
     def run_quick_update(self):
