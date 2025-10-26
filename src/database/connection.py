@@ -7,7 +7,7 @@ from loguru import logger
 
 load_dotenv()
 
-DATABASE_URL = os.getenv('DATABASE_URL')
+DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///watchmarket.db')
 
 # Create engine with connection pooling
 engine = create_engine(

@@ -29,9 +29,16 @@ class WatchListing(Base):
     year = Column(Integer)
     
     # Condition & Accessories
-    condition = Column(String(50))  # 'new', 'unworn', 'excellent', 'good', 'fair'
+    condition = Column(String(50))  # 'new', 'unworn', 'excellent', 'good', 'fair', 'naked', 'mint'
+    serial_number = Column(String(50))  # Serial number or letter series
+    bracelet_condition = Column(String(100))  # 'no stretch', 'full links', 'solid oyster'
+    case_condition = Column(String(100))  # 'razor sharp', 'unpolished', 'no holes'
     has_box = Column(Boolean)
     has_papers = Column(Boolean)
+    has_warranty_card = Column(Boolean)  # Separate from papers for dealer tracking
+    complete_set = Column(Boolean, default=False)  # Full complete set
+    includes_label = Column(Boolean, default=False)  # Includes shipping label cost
+    image_files = Column(String(1000))  # JSON array of correlated image filenames
     
     # Pricing
     price_usd = Column(Float, nullable=False, index=True)

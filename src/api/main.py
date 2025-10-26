@@ -1,6 +1,7 @@
 """FastAPI backend for watch platform"""
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
 from typing import List, Dict, Optional
@@ -46,6 +47,12 @@ class WatchResponse(BaseModel):
 @app.get("/")
 def root():
     return {"message": "Watch Market Intelligence API", "version": "1.0.0"}
+
+@app.get("/dashboard")
+def dashboard():
+    """Serve the dashboard HTML file"""
+    dashboard_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "dashboard.html")
+    return FileResponse(dashboard_path)
 
 @app.get("/api/watches", response_model=List[WatchResponse])
 def get_watches(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
@@ -381,7 +388,7 @@ class DualMarketPricePoint(BaseModel):
 
 @app.get("/api/dual-market-search", response_model=List[DualMarketSearchResult])
 def dual_market_search(q: str, limit: int = 10, db: Session = Depends(get_db)):
-    """Search showing both wholesale and retail pricing"""
+    """Search showing both wholesale and retail pricing with separate lines"""
     from sqlalchemy import text
     
     # Use raw SQL to avoid SQLAlchemy CASE syntax issues
@@ -391,19 +398,27 @@ def dual_market_search(q: str, limit: int = 10, db: Session = Depends(get_db)):
             brand,
             model,
             reference_number,
+            special_edition,
             AVG(CASE WHEN source_type = 'retail' THEN price_usd END) as avg_retail_price,
             AVG(CASE WHEN source_type = 'wholesale' THEN price_usd END) as avg_wholesale_price,
             COUNT(CASE WHEN source_type = 'retail' THEN 1 END) as retail_count,
             COUNT(CASE WHEN source_type = 'wholesale' THEN 1 END) as wholesale_count
         FROM watch_listings 
         WHERE comparison_key IS NOT NULL 
-        AND is_active = true
-        AND (comparison_key ILIKE :search_term 
-             OR brand ILIKE :search_term 
-             OR model ILIKE :search_term 
-             OR reference_number ILIKE :search_term 
-             OR special_edition ILIKE :search_term)
-        GROUP BY comparison_key, brand, model, reference_number
+        AND is_active = 1
+        AND (LOWER(comparison_key) LIKE LOWER(:search_term) 
+             OR LOWER(brand) LIKE LOWER(:search_term) 
+             OR LOWER(model) LIKE LOWER(:search_term) 
+             OR LOWER(reference_number) LIKE LOWER(:search_term) 
+             OR LOWER(special_edition) LIKE LOWER(:search_term))
+        GROUP BY comparison_key, brand, model, reference_number, special_edition
+        ORDER BY 
+            CASE 
+                WHEN AVG(CASE WHEN source_type = 'retail' THEN price_usd END) IS NOT NULL 
+                AND AVG(CASE WHEN source_type = 'wholesale' THEN price_usd END) IS NOT NULL 
+                THEN 0 ELSE 1 END,
+            (COUNT(CASE WHEN source_type = 'retail' THEN 1 END) + 
+             COUNT(CASE WHEN source_type = 'wholesale' THEN 1 END)) DESC
         LIMIT :limit_val
     """)
     
@@ -422,10 +437,12 @@ def dual_market_search(q: str, limit: int = 10, db: Session = Depends(get_db)):
             margin_dollars = float(row.avg_retail_price) - float(row.avg_wholesale_price)
             margin_percent = (margin_dollars / float(row.avg_wholesale_price)) * 100
         
-        # Create display title
+        # Create display title with special edition if present
         display_parts = [row.brand, row.model]
         if row.reference_number:
-            display_parts.append(f"({row.reference_number})")
+            display_parts.append(row.reference_number)
+        if row.special_edition:
+            display_parts.append(f"({row.special_edition})")
         display_title = " ".join(display_parts)
         
         result = DualMarketSearchResult(
@@ -481,10 +498,15 @@ def get_dual_market_history(comparison_key: str, range: str = "90d", db: Session
     # Organize data by date
     price_by_date = {}
     for row in history_query:
-        date_str = row.date.strftime('%Y-%m-%d')
+        # Handle both string and date object from func.date()
+        if isinstance(row.date, str):
+            date_str = row.date
+        else:
+            date_str = row.date.strftime('%Y-%m-%d') if hasattr(row.date, 'strftime') else str(row.date)
+
         if date_str not in price_by_date:
             price_by_date[date_str] = {'retail_price': None, 'wholesale_price': None}
-        
+
         if row.source_type == 'retail':
             price_by_date[date_str]['retail_price'] = float(row.avg_price)
         elif row.source_type == 'wholesale':
@@ -504,6 +526,50 @@ def get_dual_market_history(comparison_key: str, range: str = "90d", db: Session
         "comparison_key": comparison_key,
         "range": range,
         "price_points": price_points
+    }
+
+@app.get("/api/dual-market-listings/{comparison_key}")
+def get_dual_market_listings(comparison_key: str, db: Session = Depends(get_db)):
+    """Get all wholesale and retail listings for a specific comparison key"""
+
+    # Get wholesale listings
+    wholesale_listings = db.query(WatchListing).filter(
+        and_(
+            WatchListing.comparison_key == comparison_key,
+            WatchListing.source_type == 'wholesale',
+            WatchListing.is_active == True
+        )
+    ).all()
+
+    # Get retail listings
+    retail_listings = db.query(WatchListing).filter(
+        and_(
+            WatchListing.comparison_key == comparison_key,
+            WatchListing.source_type == 'retail',
+            WatchListing.is_active == True
+        )
+    ).all()
+
+    return {
+        "comparison_key": comparison_key,
+        "wholesale_listings": [
+            {
+                "price_usd": listing.price_usd,
+                "source": listing.source,
+                "url": listing.url,
+                "condition": listing.condition
+            }
+            for listing in wholesale_listings
+        ],
+        "retail_listings": [
+            {
+                "price_usd": listing.price_usd,
+                "source": listing.source,
+                "url": listing.url,
+                "condition": listing.condition
+            }
+            for listing in retail_listings
+        ]
     }
 
 @app.get("/api/margin-opportunities")
@@ -529,7 +595,7 @@ def get_margin_opportunities(min_margin_percent: float = 15.0, limit: int = 20, 
               AVG(CASE WHEN source_type = 'wholesale' THEN price_usd END) * 100) as margin_percent
         FROM watch_listings 
         WHERE comparison_key IS NOT NULL 
-        AND is_active = true
+        AND is_active = 1
         GROUP BY comparison_key, brand, model, reference_number
         HAVING AVG(CASE WHEN source_type = 'retail' THEN price_usd END) IS NOT NULL
         AND AVG(CASE WHEN source_type = 'wholesale' THEN price_usd END) IS NOT NULL
@@ -719,6 +785,160 @@ def search_watches(
     
     return search_results
 
+# ============================================================================
+# Price Search with Dual Market Display (Two Separate Lines)
+# ============================================================================
+
+class DualPriceSearchResult(BaseModel):
+    """Search result specifically for dual-market price display"""
+    comparison_key: str
+    display_name: str
+    reference_number: Optional[str] = None
+    model: Optional[str] = None
+    brand: str
+    
+    # Separate pricing lines
+    wholesale_line: Optional[Dict] = None  # {'price': 28000, 'count': 5, 'available': True}
+    retail_line: Optional[Dict] = None     # {'price': 35000, 'count': 12, 'available': True}
+    
+    # Additional metadata
+    margin_info: Optional[Dict] = None     # {'dollars': 7000, 'percent': 25.0}
+
+@app.get("/api/price-search-dual", response_model=List[DualPriceSearchResult])
+def price_search_dual_market(
+    q: str, 
+    limit: int = 10,
+    db: Session = Depends(get_db)
+):
+    """
+    Search watches with wholesale and retail prices displayed as two separate lines
+    Perfect for price comparison UI where each market type gets its own line
+    """
+    if not q or len(q.strip()) < 1:
+        return []
+    
+    from sqlalchemy import text
+    
+    # Enhanced query to get comprehensive dual market data
+    sql = text("""
+        SELECT 
+            w.comparison_key,
+            w.brand,
+            w.model,
+            w.reference_number,
+            w.special_edition,
+            
+            -- Wholesale data
+            AVG(CASE WHEN w.source_type = 'wholesale' THEN w.price_usd END) as avg_wholesale_price,
+            MIN(CASE WHEN w.source_type = 'wholesale' THEN w.price_usd END) as min_wholesale_price,
+            MAX(CASE WHEN w.source_type = 'wholesale' THEN w.price_usd END) as max_wholesale_price,
+            COUNT(CASE WHEN w.source_type = 'wholesale' THEN 1 END) as wholesale_count,
+            
+            -- Retail data
+            AVG(CASE WHEN w.source_type = 'retail' THEN w.price_usd END) as avg_retail_price,
+            MIN(CASE WHEN w.source_type = 'retail' THEN w.price_usd END) as min_retail_price,
+            MAX(CASE WHEN w.source_type = 'retail' THEN w.price_usd END) as max_retail_price,
+            COUNT(CASE WHEN w.source_type = 'retail' THEN 1 END) as retail_count,
+            
+            -- Dealer conditions (for wholesale intelligence)
+            COUNT(CASE WHEN w.condition = 'naked' THEN 1 END) as naked_count,
+            COUNT(CASE WHEN w.complete_set = 1 THEN 1 END) as complete_sets_count,
+            COUNT(CASE WHEN w.bracelet_condition LIKE '%no stretch%' THEN 1 END) as no_stretch_count
+            
+        FROM watch_listings w
+        WHERE w.comparison_key IS NOT NULL 
+        AND w.is_active = 1
+        AND (LOWER(w.comparison_key) LIKE LOWER(:search_term) 
+             OR LOWER(w.brand) LIKE LOWER(:search_term) 
+             OR LOWER(w.model) LIKE LOWER(:search_term) 
+             OR LOWER(w.reference_number) LIKE LOWER(:search_term) 
+             OR LOWER(w.special_edition) LIKE LOWER(:search_term))
+        GROUP BY w.comparison_key, w.brand, w.model, w.reference_number, w.special_edition
+        HAVING COUNT(w.id) > 0
+        ORDER BY 
+            -- Prioritize watches with both wholesale and retail data
+            CASE 
+                WHEN AVG(CASE WHEN w.source_type = 'retail' THEN w.price_usd END) IS NOT NULL 
+                AND AVG(CASE WHEN w.source_type = 'wholesale' THEN w.price_usd END) IS NOT NULL 
+                THEN 0 ELSE 1 END,
+            -- Then by total listings count
+            COUNT(w.id) DESC
+        LIMIT :limit_val
+    """)
+    
+    search_data = db.execute(sql, {
+        'search_term': f'%{q.strip()}%',
+        'limit_val': limit
+    }).fetchall()
+    
+    results = []
+    for row in search_data:
+        # Build display name
+        display_parts = [row.brand, row.model]
+        if row.reference_number:
+            display_parts.append(row.reference_number)
+        if row.special_edition:
+            display_parts.append(f"({row.special_edition})")
+        display_name = " ".join(display_parts)
+        
+        # Prepare wholesale line data
+        wholesale_line = None
+        if row.avg_wholesale_price and row.wholesale_count > 0:
+            wholesale_line = {
+                'price': round(float(row.avg_wholesale_price)),
+                'price_range': {
+                    'min': round(float(row.min_wholesale_price)),
+                    'max': round(float(row.max_wholesale_price))
+                } if row.min_wholesale_price != row.max_wholesale_price else None,
+                'count': int(row.wholesale_count),
+                'available': True,
+                'market_type': 'wholesale',
+                'dealer_intel': {
+                    'naked_available': int(row.naked_count) if row.naked_count else 0,
+                    'complete_sets': int(row.complete_sets_count) if row.complete_sets_count else 0,
+                    'pristine_bracelets': int(row.no_stretch_count) if row.no_stretch_count else 0
+                }
+            }
+        
+        # Prepare retail line data
+        retail_line = None
+        if row.avg_retail_price and row.retail_count > 0:
+            retail_line = {
+                'price': round(float(row.avg_retail_price)),
+                'price_range': {
+                    'min': round(float(row.min_retail_price)),
+                    'max': round(float(row.max_retail_price))
+                } if row.min_retail_price != row.max_retail_price else None,
+                'count': int(row.retail_count),
+                'available': True,
+                'market_type': 'retail'
+            }
+        
+        # Calculate margin information if both markets available
+        margin_info = None
+        if wholesale_line and retail_line:
+            margin_dollars = retail_line['price'] - wholesale_line['price']
+            margin_percent = (margin_dollars / wholesale_line['price']) * 100
+            margin_info = {
+                'dollars': margin_dollars,
+                'percent': round(margin_percent, 1),
+                'arbitrage_potential': margin_dollars > 1000  # Flag significant opportunities
+            }
+        
+        result = DualPriceSearchResult(
+            comparison_key=row.comparison_key,
+            display_name=display_name,
+            reference_number=row.reference_number,
+            model=row.model,
+            brand=row.brand,
+            wholesale_line=wholesale_line,
+            retail_line=retail_line,
+            margin_info=margin_info
+        )
+        results.append(result)
+    
+    return results
+
 @app.get("/api/price-history-enhanced")
 def get_enhanced_price_history(
     comparison_key: str,
@@ -784,7 +1004,7 @@ def get_enhanced_price_history(
     price_points = []
     for result in results:
         price_points.append(PricePoint(
-            date=result.date.isoformat(),
+            date=result.date.strftime('%Y-%m-%d') if hasattr(result.date, 'strftime') else str(result.date),
             avg_price=float(result.avg_price),
             listing_count=result.listing_count,
             min_price=float(result.min_price),

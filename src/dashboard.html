@@ -239,11 +239,20 @@
 
     <!-- Include Chart.js with time adapter -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/date-fns@2.29.3/index.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@2.0.1/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/moment@2.29.4/moment.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment@1.0.1/dist/chartjs-adapter-moment.min.js"></script>
     <script>
-        const API_URL = 'http://localhost:8001';
+        const API_URL = 'http://localhost:8000';
         let currentSelectedKey = null;
+
+        // Utility function for debouncing
+        function debounce(func, delay) {
+            let timeoutId;
+            return function(...args) {
+                clearTimeout(timeoutId);
+                timeoutId = setTimeout(() => func.apply(this, args), delay);
+            };
+        }
 
         // Tab Management
         function showTab(tabName) {
@@ -1268,6 +1277,66 @@
             updateDualMarketChart();
         }
 
+        async function showDualMarketSources(comparisonKey, watchName) {
+            try {
+                const response = await fetch(`${API_URL}/api/dual-market-listings/${encodeURIComponent(comparisonKey)}`);
+                const data = await response.json();
+
+                let modalContent = `<h4 class="font-semibold mb-4">${watchName}</h4>`;
+
+                // Wholesale listings
+                if (data.wholesale_listings && data.wholesale_listings.length > 0) {
+                    modalContent += `
+                        <div class="mb-6">
+                            <h5 class="font-semibold text-green-700 mb-2">🟢 Wholesale Listings (${data.wholesale_listings.length})</h5>
+                            <div class="space-y-2">
+                                ${data.wholesale_listings.map(listing => `
+                                    <div class="flex justify-between items-center p-3 bg-green-50 rounded border border-green-200">
+                                        <div>
+                                            <div class="font-semibold text-green-800">$${listing.price_usd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div>
+                                            <div class="text-xs text-gray-600">${listing.source} ${listing.condition ? '• ' + listing.condition : ''}</div>
+                                        </div>
+                                        ${listing.url ? `<a href="${listing.url}" target="_blank" class="text-blue-600 hover:text-blue-800 text-sm">View →</a>` : ''}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Retail listings
+                if (data.retail_listings && data.retail_listings.length > 0) {
+                    modalContent += `
+                        <div class="mb-4">
+                            <h5 class="font-semibold text-blue-700 mb-2">🔵 Retail Listings (${data.retail_listings.length})</h5>
+                            <div class="space-y-2">
+                                ${data.retail_listings.map(listing => `
+                                    <div class="flex justify-between items-center p-3 bg-blue-50 rounded border border-blue-200">
+                                        <div>
+                                            <div class="font-semibold text-blue-800">$${listing.price_usd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div>
+                                            <div class="text-xs text-gray-600">${listing.source} ${listing.condition ? '• ' + listing.condition : ''}</div>
+                                        </div>
+                                        ${listing.url ? `<a href="${listing.url}" target="_blank" class="text-blue-600 hover:text-blue-800 text-sm">View →</a>` : ''}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                if (!data.wholesale_listings?.length && !data.retail_listings?.length) {
+                    modalContent += `<p class="text-gray-500 text-center py-4">No source listings available</p>`;
+                }
+
+                document.getElementById('modalTitle').textContent = 'Source Listings';
+                document.getElementById('modalContent').innerHTML = modalContent;
+                document.getElementById('sourceModal').classList.remove('hidden');
+            } catch (error) {
+                console.error('Error loading dual market sources:', error);
+                alert('Error loading source listings');
+            }
+        }
+
         async function loadMarginOpportunities() {
             try {
                 const response = await fetch(`${API_URL}/api/margin-opportunities?min_margin_percent=15&limit=20`);
@@ -1277,7 +1346,8 @@
                 
                 if (data.opportunities && data.opportunities.length > 0) {
                     const html = data.opportunities.map((opp, index) => `
-                        <div class="bg-white rounded-lg shadow p-4 border-l-4 border-orange-500">
+                        <div class="bg-white rounded-lg shadow p-4 border-l-4 border-orange-500 cursor-pointer hover:shadow-lg transition-shadow"
+                             onclick="showDualMarketSources('${opp.comparison_key}', '${opp.brand} ${opp.model}')">
                             <div class="flex justify-between items-start">
                                 <div>
                                     <h4 class="font-semibold text-lg">${opp.brand} ${opp.model}</h4>
@@ -1298,6 +1368,9 @@
                                     Retail: $${opp.avg_retail_price.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                                     <span class="text-gray-400">(${opp.retail_listings} listings)</span>
                                 </div>
+                            </div>
+                            <div class="mt-2 text-xs text-gray-400 text-center">
+                                👆 Click to view source listings
                             </div>
                         </div>
                     `).join('');
